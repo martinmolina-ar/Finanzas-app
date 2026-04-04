@@ -543,13 +543,23 @@ const ProfileView = ({ user, onUpdate, onBack }: { user: any, onUpdate: (data: a
   const [phone, setPhone] = useState(user.phone || '');
   const [pass, setPass] = useState({ current: '', new: '', confirm: '' });
   const [saved, setSaved] = useState(false);
+  const [passError, setPassError] = useState('');
   const save = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (pass.new && (pass.new !== pass.confirm || !pass.current)) return alert("Revisá las contraseñas");
+    setPassError('');
+    if (pass.new) {
+      if (!pass.current) return setPassError("Ingresá tu contraseña actual");
+      if (pass.new !== pass.confirm) return setPassError("Las contraseñas no coinciden");
+      if (pass.new.length < 6) return setPassError("La nueva contraseña debe tener al menos 6 caracteres");
+      const { error } = await supabase.auth.updateUser({ password: pass.new });
+      if (error) return setPassError(error.message);
+    }
     onUpdate({ name, email, phone });
+    await supabase.auth.updateUser({ data: { name } });
     if (phone && user.id) {
       await supabase.from('profiles').upsert({ user_id: user.id, phone: phone.startsWith('+') ? phone : `+${phone}` });
     }
+    setPass({ current: '', new: '', confirm: '' });
     setSaved(true); setTimeout(() => setSaved(false), 2000);
   };
   const handlePhoto = (e: React.ChangeEvent<HTMLInputElement>) => { if (e.target.files?.[0]) onUpdate({ avatar: URL.createObjectURL(e.target.files[0]) }); };
@@ -567,12 +577,13 @@ const ProfileView = ({ user, onUpdate, onBack }: { user: any, onUpdate: (data: a
             <p className="text-[10px] text-green-600">Con tu número vinculado podés registrar gastos mandando mensajes al bot.</p>
           </div>
           <div className="border-t pt-4 space-y-2">
-            <p className="font-bold text-sm text-gray-400 uppercase mb-2">Seguridad (Opcional)</p>
+            <p className="font-bold text-sm text-gray-400 uppercase mb-2">Cambiar Contraseña (Opcional)</p>
             <input type="password" placeholder="Contraseña Actual" value={pass.current} onChange={e => setPass({ ...pass, current: e.target.value })} className="w-full bg-gray-50 p-3 rounded-xl border outline-none text-sm" />
             <div className="flex gap-2">
               <input type="password" placeholder="Nueva" value={pass.new} onChange={e => setPass({ ...pass, new: e.target.value })} className="w-full bg-gray-50 p-3 rounded-xl border outline-none text-sm" />
               <input type="password" placeholder="Confirmar" value={pass.confirm} onChange={e => setPass({ ...pass, confirm: e.target.value })} className="w-full bg-gray-50 p-3 rounded-xl border outline-none text-sm" />
             </div>
+            {passError && <p className="text-red-500 text-xs">{passError}</p>}
           </div>
         </div>
         <button className={`w-full font-bold py-3 rounded-xl shadow-lg transition-colors ${saved ? 'bg-green-500 text-white' : 'bg-black text-white'}`}>{saved ? '✓ Guardado' : 'Guardar Cambios'}</button>
@@ -782,6 +793,9 @@ export default function App() {
 
   const handleSaveTransaction = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!transForm.account) return alert('Primero agregá una cuenta en la sección Cuentas');
+    if (!transForm.amount || isNaN(Number(transForm.amount))) return alert('Ingresá un monto válido');
+    if (transForm.type === 'transferencia' && !transForm.toAccount) return alert('Seleccioná una cuenta destino');
     const tx = { ...transForm, id: transForm.id || Date.now().toString(), amount: Number(transForm.amount) } as Transaction;
     const dbRow = { id: tx.id, user_id: currentUser.id, amount: tx.amount, description: tx.description, category: tx.category, account: tx.account, to_account: tx.toAccount || null, method: tx.method, type: tx.type, income_type: tx.incomeType || null, is_recurring: tx.isRecurring || false, date: tx.date };
     if (transForm.id) {
@@ -803,6 +817,8 @@ export default function App() {
 
   const handleSaveAccount = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!accForm.name.trim()) return alert('Ingresá un nombre para la cuenta');
+    if (!accForm.id && (accForm.balance === '' || isNaN(Number(accForm.balance)))) return alert('Ingresá un saldo inicial válido');
     if (accForm.id) {
       const old = accountBalances.find(a => a.id === accForm.id);
       const newBal = Number(accForm.balance);
@@ -1154,9 +1170,10 @@ export default function App() {
             </div>
             <form onSubmit={handleSaveTransaction} className="space-y-4">
               <div className="flex bg-gray-100 p-1 rounded-xl">
-                {(['gasto', 'ingreso', 'transferencia'] as TransactionType[]).map(t => (
-                  <button key={t} type="button" onClick={() => setTransForm({ ...transForm, type: t, category: CATEGORIES[t][0] })} className={`flex-1 py-2 text-xs font-bold rounded-lg uppercase transition-all ${transForm.type === t ? 'bg-white shadow' : ''}`}>{t}</button>
-                ))}
+                {(['gasto', 'ingreso', 'transferencia'] as TransactionType[]).map(t => {
+                  if (t === 'transferencia' && accountsList.length < 2) return null;
+                  return <button key={t} type="button" onClick={() => setTransForm({ ...transForm, type: t, category: CATEGORIES[t][0] })} className={`flex-1 py-2 text-xs font-bold rounded-lg uppercase transition-all ${transForm.type === t ? 'bg-white shadow' : ''}`}>{t}</button>;
+                })}
               </div>
               <div className="flex justify-center">
                 <div className="flex items-center gap-2 bg-gray-50 px-4 py-2 rounded-full border">
