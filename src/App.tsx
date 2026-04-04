@@ -636,6 +636,7 @@ export default function App() {
   const [activeTab, setActiveTab] = useState('dashboard');
   const [showMenu, setShowMenu] = useState(false);
   const [showTransactionModal, setShowTransactionModal] = useState(false);
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
   const [showAccountModal, setShowAccountModal] = useState(false);
   const [showBudgetModal, setShowBudgetModal] = useState(false);
   const [selectedAccountForAction, setSelectedAccountForAction] = useState<AccountItem | null>(null);
@@ -830,10 +831,10 @@ export default function App() {
   };
 
   const handleDeleteTransaction = async (id: string) => {
-    if (!confirm('¿Eliminar este movimiento?')) return;
     await supabase.from('transactions').delete().eq('id', id);
     setTransactions(transactions.filter(t => t.id !== id));
     setShowTransactionModal(false);
+    setConfirmDeleteId(null);
   };
 
   const handleSaveAccount = async (e: React.FormEvent) => {
@@ -1183,11 +1184,11 @@ export default function App() {
 
       {/* ── MODAL TRANSACCIÓN ────────────────────────── */}
       {showTransactionModal && (
-        <div className="fixed inset-0 z-[70] flex items-end sm:items-center justify-center sm:p-4 bg-black/60 backdrop-blur-sm" onClick={() => setShowTransactionModal(false)}>
+        <div className="fixed inset-0 z-[70] flex items-end sm:items-center justify-center sm:p-4 bg-black/60 backdrop-blur-sm" onClick={() => { setShowTransactionModal(false); setConfirmDeleteId(null); }}>
           <div className="bg-white rounded-t-[2rem] sm:rounded-[2rem] p-6 w-full sm:max-w-sm max-h-[92vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
             <div className="flex justify-between items-center mb-4">
               <h3 className="text-xl font-bold">{transForm.id ? 'Editar' : 'Nuevo'} Movimiento</h3>
-              <button onClick={() => setShowTransactionModal(false)} className="p-2 bg-gray-100 rounded-full"><X size={18} /></button>
+              <button onClick={() => { setShowTransactionModal(false); setConfirmDeleteId(null); }} className="p-2 bg-gray-100 rounded-full"><X size={18} /></button>
             </div>
             <form onSubmit={handleSaveTransaction} className="space-y-4">
               <div className="flex bg-gray-100 p-1 rounded-xl">
@@ -1261,9 +1262,19 @@ export default function App() {
               </div>
               <button type="submit" className="w-full bg-black text-white font-bold py-4 rounded-2xl text-base">Guardar</button>
               {transForm.id && (
-                <button type="button" onClick={() => handleDeleteTransaction(transForm.id)} className="w-full py-3 rounded-2xl text-red-500 font-bold text-sm flex items-center justify-center gap-2 bg-red-50">
-                  <Trash2 size={16} /> Eliminar movimiento
-                </button>
+                confirmDeleteId === transForm.id ? (
+                  <div className="bg-red-50 rounded-2xl p-4 space-y-2">
+                    <p className="text-center text-sm font-bold text-red-700">¿Eliminar este movimiento?</p>
+                    <div className="flex gap-2">
+                      <button type="button" onClick={() => setConfirmDeleteId(null)} className="flex-1 py-2.5 rounded-xl bg-gray-100 text-gray-700 font-bold text-sm">Cancelar</button>
+                      <button type="button" onClick={() => handleDeleteTransaction(transForm.id)} className="flex-1 py-2.5 rounded-xl bg-red-500 text-white font-bold text-sm">Sí, eliminar</button>
+                    </div>
+                  </div>
+                ) : (
+                  <button type="button" onClick={() => setConfirmDeleteId(transForm.id)} className="w-full py-3 rounded-2xl text-red-500 font-bold text-sm flex items-center justify-center gap-2 bg-red-50">
+                    <Trash2 size={16} /> Eliminar movimiento
+                  </button>
+                )
               )}
             </form>
           </div>
