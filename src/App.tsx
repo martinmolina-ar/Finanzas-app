@@ -1012,7 +1012,7 @@ export default function App() {
     if (!transForm.amount || parseInput(transForm.amount) === 0) return alert('Ingresá un monto válido');
     if (transForm.type === 'transferencia' && !transForm.toAccount) return alert('Seleccioná una cuenta destino');
     const tx = { ...transForm, id: transForm.id || Date.now().toString(), amount: parseInput(transForm.amount) } as Transaction;
-    const dbRow = { id: tx.id, user_id: currentUser.id, amount: tx.amount, description: tx.description, category: tx.category, account: tx.account, to_account: tx.toAccount || null, method: tx.method, type: tx.type, income_type: tx.incomeType || null, is_recurring: tx.isRecurring || false, date: tx.date };
+    const dbRow = { id: tx.id, user_id: currentUser.id, amount: tx.amount, description: tx.description, category: tx.category, account: tx.account, to_account: tx.type === 'transferencia' ? (tx.toAccount || null) : null, method: tx.method, type: tx.type, income_type: tx.incomeType || null, is_recurring: tx.isRecurring || false, date: tx.date };
     if (transForm.id) {
       await supabase.from('transactions').update(dbRow).eq('id', transForm.id);
       setTransactions(transactions.map(t => t.id === transForm.id ? tx : t));
@@ -1284,7 +1284,7 @@ export default function App() {
                 <div key={t.id} onClick={() => openTxModal(t)} className={`px-4 py-3 flex items-center justify-between cursor-pointer hover:bg-gray-50 ${i !== 3 ? 'border-b border-gray-50' : ''}`}>
                   <div className="flex items-center gap-3">
                     <div className={`w-10 h-10 rounded-full flex items-center justify-center text-base flex-shrink-0 ${t.type === 'ingreso' ? 'bg-green-100' : t.type === 'transferencia' ? 'bg-blue-100' : 'bg-gray-100'}`}>{getCategoryEmoji(t.category)}</div>
-                    <div><p className="font-bold text-sm">{t.description}</p><p className="text-xs text-gray-400">{t.account} · {t.date}</p></div>
+                    <div><p className="font-bold text-sm">{t.description}</p><p className="text-xs text-gray-400">{t.account}{t.type === 'transferencia' && t.toAccount ? ` → ${t.toAccount}` : ''} · {t.date}</p></div>
                   </div>
                   <span className={`font-bold text-sm ml-2 flex-shrink-0 ${t.type === 'ingreso' ? 'text-green-600' : t.type === 'transferencia' ? 'text-blue-600' : 'text-black'}`}>
                     {t.type === 'ingreso' ? '+' : t.type === 'transferencia' ? '↔' : '-'} ${fmtARS(t.amount)}
@@ -1356,7 +1356,7 @@ export default function App() {
                     <div className={`w-10 h-10 rounded-full flex items-center justify-center text-base flex-shrink-0 ${t.type === 'ingreso' ? 'bg-green-100' : t.type === 'transferencia' ? 'bg-blue-100' : 'bg-gray-100'}`}>{getCategoryEmoji(t.category)}</div>
                     <div>
                       <p className="font-bold text-sm">{t.description}</p>
-                      <p className="text-xs text-gray-400">{t.date} · {t.account}{t.toAccount ? ` → ${t.toAccount}` : ''}{t.isRecurring ? ' · 🔄' : ''}</p>
+                      <p className="text-xs text-gray-400">{t.date} · {t.account}{t.type === 'transferencia' && t.toAccount ? ` → ${t.toAccount}` : ''}{t.isRecurring ? ' · 🔄' : ''}</p>
                     </div>
                   </div>
                   <span className={`font-bold text-sm ml-2 flex-shrink-0 ${t.type === 'ingreso' ? 'text-green-600' : t.type === 'transferencia' ? 'text-blue-600' : 'text-black'}`}>
