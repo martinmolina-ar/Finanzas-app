@@ -1450,9 +1450,12 @@ export default function App() {
                 <div>
                   <label className="text-[10px] font-bold text-gray-400 uppercase ml-1">Cuenta</label>
                   <select className="w-full bg-gray-50 p-3 rounded-xl text-sm mt-1" value={transForm.account} onChange={e => { if (e.target.value === '__add__') { openAccModal(); } else setTransForm({ ...transForm, account: e.target.value }); }}>
-                    {accountsList.map(a => <option key={a.id} value={a.name}>{a.name}</option>)}
+                    {accountsList.map(a => <option key={a.id} value={a.name}>{a.type === 'ahorro' ? `🐷 ${a.name}` : a.name}</option>)}
                     <option value="__add__">＋ Nueva cuenta...</option>
                   </select>
+                  {accountsList.find(a => a.name === transForm.account)?.type === 'ahorro' && (
+                    <p className="text-[10px] text-amber-600 font-medium mt-1 ml-1">🐷 Cuenta de ahorro — no afecta el Neto para Gastar</p>
+                  )}
                 </div>
               </div>
               {transForm.type === 'transferencia' && (
@@ -1553,9 +1556,21 @@ export default function App() {
         <div className="fixed inset-0 z-[60] flex items-end sm:items-center justify-center sm:p-4 bg-black/50 backdrop-blur-sm" onClick={() => setSelectedAccountForAction(null)}>
           <div className="bg-white rounded-t-3xl sm:rounded-3xl p-6 w-full sm:max-w-sm" onClick={e => e.stopPropagation()}>
             <div className="flex items-center justify-between mb-5"><h3 className="text-xl font-bold">{selectedAccountForAction.name}</h3><button onClick={() => setSelectedAccountForAction(null)} className="p-2 bg-gray-100 rounded-full"><X size={18} /></button></div>
+            {selectedAccountForAction.type === 'ahorro' && (
+              <div className="flex items-center gap-2 mb-3 bg-amber-50 rounded-2xl px-3 py-2">
+                <PiggyBank size={14} className="text-amber-600" />
+                <p className="text-xs text-amber-700 font-medium">Cuenta de ahorro — no suma al Neto para Gastar</p>
+              </div>
+            )}
             <div className="grid grid-cols-3 gap-3 mb-4">
-              <button onClick={() => { openTxModal(undefined, 'ingreso', selectedAccountForAction.name); setSelectedAccountForAction(null); }} className="p-4 bg-green-50 rounded-2xl text-green-800 font-bold flex flex-col items-center gap-2 text-xs"><ArrowDownLeft size={20} /> Ingresar</button>
-              <button onClick={() => { openTxModal(undefined, 'gasto', selectedAccountForAction.name); setSelectedAccountForAction(null); }} className="p-4 bg-red-50 rounded-2xl text-red-800 font-bold flex flex-col items-center gap-2 text-xs"><ArrowUpRight size={20} /> Gastar</button>
+              <button onClick={() => { openTxModal(undefined, 'ingreso', selectedAccountForAction.name); setSelectedAccountForAction(null); }} className="p-4 bg-green-50 rounded-2xl text-green-800 font-bold flex flex-col items-center gap-2 text-xs">
+                <ArrowDownLeft size={20} />
+                {selectedAccountForAction.type === 'ahorro' ? 'Depositar' : 'Ingresar'}
+              </button>
+              <button onClick={() => { openTxModal(undefined, 'gasto', selectedAccountForAction.name); setSelectedAccountForAction(null); }} className="p-4 bg-red-50 rounded-2xl text-red-800 font-bold flex flex-col items-center gap-2 text-xs">
+                <ArrowUpRight size={20} />
+                {selectedAccountForAction.type === 'ahorro' ? 'Retirar' : 'Gastar'}
+              </button>
               <button onClick={() => { openTxModal(undefined, 'transferencia', selectedAccountForAction.name); setSelectedAccountForAction(null); }} className="p-4 bg-blue-50 rounded-2xl text-blue-800 font-bold flex flex-col items-center gap-2 text-xs"><ArrowRightLeft size={20} /> Transferir</button>
             </div>
             <button onClick={() => { openAccModal(selectedAccountForAction); setSelectedAccountForAction(null); }} className="w-full py-3 bg-gray-100 rounded-2xl font-bold text-gray-600 flex items-center justify-center gap-2"><Pencil size={16} /> Editar / Ajustar Saldo</button>
