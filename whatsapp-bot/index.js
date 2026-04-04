@@ -1,5 +1,13 @@
 import 'dotenv/config';
 import express from 'express';
+
+// Log de inicio para diagnosticar en Railway
+console.log('Iniciando servidor...');
+console.log('NODE_ENV:', process.env.NODE_ENV);
+console.log('PORT:', process.env.PORT);
+console.log('SUPABASE_URL:', process.env.SUPABASE_URL ? 'OK' : 'FALTA');
+console.log('ANTHROPIC_API_KEY:', process.env.ANTHROPIC_API_KEY ? 'OK' : 'FALTA');
+console.log('STRIPE_SECRET_KEY:', process.env.STRIPE_SECRET_KEY ? 'OK' : 'FALTA');
 import twilio from 'twilio';
 import Anthropic from '@anthropic-ai/sdk';
 import { createClient } from '@supabase/supabase-js';
@@ -167,7 +175,13 @@ app.post('/webhook', async (req, res) => {
   reply(`${emoji} *${tx.description}*\n${sign} $${tx.amount.toLocaleString()} · ${tx.category}\n📅 ${date} · ${tx.account}\n\n_Guardado en FinanzasApp_`);
 });
 
-app.get('/health', (_, res) => res.json({ ok: true }));
+app.get('/health', (_, res) => res.json({ ok: true, env: { supabase: !!process.env.SUPABASE_URL, anthropic: !!process.env.ANTHROPIC_API_KEY, stripe: !!process.env.STRIPE_SECRET_KEY } }));
+
+// Error handler global
+app.use((err, req, res, next) => {
+  console.error('Error:', err);
+  res.status(500).json({ error: err.message });
+});
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, '0.0.0.0', () => console.log(`Servidor corriendo en puerto ${PORT}`));
