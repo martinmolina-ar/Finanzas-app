@@ -226,9 +226,9 @@ const ReportsDonut = ({ expensesByCategory, totalExpense }: { expensesByCategory
           acc.offset += cat.percentage; acc.els.push(el); return acc;
         }, { offset: 0, els: [] }).els}
       </svg>
-      <div className="absolute inset-0 flex flex-col items-center justify-center">
-        <span className="text-xs font-bold text-gray-400 uppercase">Total</span>
-        <span className="text-xl font-bold">$ {totalExpense.toLocaleString()}</span>
+      <div className="absolute inset-0 flex flex-col items-center justify-center px-3">
+        <span className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Total</span>
+        <span className="text-sm font-bold text-center leading-tight break-all">$ {fmtARS(totalExpense)}</span>
       </div>
     </div>
     <div className="w-full space-y-3">
@@ -240,7 +240,7 @@ const ReportsDonut = ({ expensesByCategory, totalExpense }: { expensesByCategory
               <div className="w-6 h-6 rounded-full flex items-center justify-center text-white" style={{ backgroundColor: cat.color }}><Icon size={12} /></div>
               <span className="text-sm font-medium">{cat.category}</span>
             </div>
-            <span className="text-sm font-bold">$ {cat.amount.toLocaleString()}</span>
+            <span className="text-sm font-bold">$ {fmtARS(cat.amount)}</span>
           </div>
         );
       })}
@@ -263,9 +263,9 @@ const ReportsBarChart = ({ historyData }: { historyData: any[] }) => {
             {(activeBar === i) && (
               <div className="absolute -top-28 left-1/2 -translate-x-1/2 bg-gray-900 text-white text-[10px] p-3 rounded-xl z-50 pointer-events-none whitespace-nowrap shadow-xl flex flex-col gap-1 min-w-[80px]">
                 <p className="text-gray-400 font-bold border-b border-gray-700 pb-1 mb-1 text-center">{d.label.toUpperCase()}</p>
-                <div className="flex justify-between gap-3"><span className="text-gray-400">Ing:</span><span className="text-green-400 font-bold">$ {d.income.toLocaleString()}</span></div>
-                <div className="flex justify-between gap-3"><span className="text-gray-400">Gas:</span><span className="text-white font-bold">$ {d.expense.toLocaleString()}</span></div>
-                <div className="flex justify-between gap-3 border-t border-gray-700 pt-1 mt-1"><span className="text-gray-400">Bal:</span><span className={`font-bold ${d.income - d.expense >= 0 ? 'text-blue-400' : 'text-red-400'}`}>$ {(d.income - d.expense).toLocaleString()}</span></div>
+                <div className="flex justify-between gap-3"><span className="text-gray-400">Ing:</span><span className="text-green-400 font-bold">$ {fmtARS(d.income)}</span></div>
+                <div className="flex justify-between gap-3"><span className="text-gray-400">Gas:</span><span className="text-white font-bold">$ {fmtARS(d.expense)}</span></div>
+                <div className="flex justify-between gap-3 border-t border-gray-700 pt-1 mt-1"><span className="text-gray-400">Bal:</span><span className={`font-bold ${d.income - d.expense >= 0 ? 'text-blue-400' : 'text-red-400'}`}>$ {fmtARS((d.income - d.expense))}</span></div>
                 <div className="absolute bottom-[-6px] left-1/2 -translate-x-1/2 w-3 h-3 bg-gray-900 rotate-45"></div>
               </div>
             )}
@@ -403,9 +403,9 @@ const ReportsView = ({ transactions }: { transactions: Transaction[] }) => {
         )}
       </div>
       <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
-        <div className="p-4 border-b border-gray-100 flex justify-between"><span className="text-gray-600">Entradas</span><span className="font-bold text-green-600">+ $ {reportStats.income.toLocaleString()}</span></div>
-        <div className="p-4 border-b border-gray-100 flex justify-between"><span className="text-gray-600">Salidas</span><span className="font-bold text-black">- $ {reportStats.expense.toLocaleString()}</span></div>
-        <div className="p-4 bg-gray-50 flex justify-between"><span className="font-bold text-gray-800">Balance</span><span className={`font-bold ${balance >= 0 ? 'text-blue-600' : 'text-red-600'}`}>$ {balance.toLocaleString()}</span></div>
+        <div className="p-4 border-b border-gray-100 flex justify-between"><span className="text-gray-600">Entradas</span><span className="font-bold text-green-600">+ $ {fmtARS(reportStats.income)}</span></div>
+        <div className="p-4 border-b border-gray-100 flex justify-between"><span className="text-gray-600">Salidas</span><span className="font-bold text-black">- $ {fmtARS(reportStats.expense)}</span></div>
+        <div className="p-4 bg-gray-50 flex justify-between"><span className="font-bold text-gray-800">Balance</span><span className={`font-bold ${balance >= 0 ? 'text-blue-600' : 'text-red-600'}`}>$ {fmtARS(balance)}</span></div>
       </div>
       <ReportsDonut expensesByCategory={expensesByCategory} totalExpense={reportStats.expense} />
       <ReportsBarChart historyData={historyData} />
@@ -555,8 +555,8 @@ const FutureView = ({ liquidBalance }: { liquidBalance: number }) => {
           {loanSim.result && (
             <div className={`p-4 rounded-xl text-center ${loanSim.result / ESTIMATED_SALARY > 0.3 ? 'bg-red-50 border border-red-100' : 'bg-indigo-50'}`}>
               <p className={`text-xs font-bold uppercase ${loanSim.result / ESTIMATED_SALARY > 0.3 ? 'text-red-600' : 'text-indigo-600'}`}>Cuota Mensual</p>
-              <p className={`text-3xl font-bold mt-1 ${loanSim.result / ESTIMATED_SALARY > 0.3 ? 'text-red-700' : 'text-indigo-700'}`}>$ {Math.round(loanSim.result).toLocaleString()}</p>
-              <p className="text-xs text-gray-400 mt-1">Total a devolver: $ {Math.round(loanSim.result * loanSim.months).toLocaleString()}</p>
+              <p className={`text-3xl font-bold mt-1 ${loanSim.result / ESTIMATED_SALARY > 0.3 ? 'text-red-700' : 'text-indigo-700'}`}>$ {fmtARS(Math.round(loanSim.result))}</p>
+              <p className="text-xs text-gray-400 mt-1">Total a devolver: $ {fmtARS(Math.round(loanSim.result * loanSim.months))}</p>
               {loanSim.result / ESTIMATED_SALARY > 0.3 && <p className="text-[10px] text-red-500 font-bold mt-2 flex items-center justify-center gap-1"><AlertTriangle size={10} /> Riesgo Alto (&gt;30% ingresos)</p>}
             </div>
           )}
@@ -571,7 +571,7 @@ const FutureView = ({ liquidBalance }: { liquidBalance: number }) => {
             <div><Lbl c="TNA (%)" /><input type="number" value={pfSim.tna} onChange={e => setPfSim({ ...pfSim, tna: Number(e.target.value) })} className="w-full bg-gray-50 p-3 rounded-xl" /></div>
           </div>
           <button onClick={calcPF} className="w-full bg-green-600 text-white py-3 rounded-xl font-bold">Calcular Retorno</button>
-          {pfSim.result && <div className="bg-green-50 p-4 rounded-xl text-center"><p className="text-xs text-green-600 font-bold uppercase">Total al Vencimiento</p><p className="text-3xl font-bold text-green-700 mt-1">$ {Math.round(pfSim.result).toLocaleString()}</p><p className="text-xs text-green-500 mt-1">Ganás: $ {Math.round(pfSim.result - pfSim.amount).toLocaleString()}</p></div>}
+          {pfSim.result && <div className="bg-green-50 p-4 rounded-xl text-center"><p className="text-xs text-green-600 font-bold uppercase">Total al Vencimiento</p><p className="text-3xl font-bold text-green-700 mt-1">$ {fmtARS(Math.round(pfSim.result))}</p><p className="text-xs text-green-500 mt-1">Ganás: $ {fmtARS(Math.round(pfSim.result - pfSim.amount))}</p></div>}
         </div>
       </div>
       <div className="bg-white p-6 rounded-[2rem] shadow-sm">
@@ -581,7 +581,7 @@ const FutureView = ({ liquidBalance }: { liquidBalance: number }) => {
           {compSim.items.map((it, i) => (
             <div key={i} className="flex items-center bg-gray-50 p-3 rounded-xl gap-2">
               <div className="flex gap-2 items-center flex-1"><input value={it.name} onChange={e => updComp(i, 'name', e.target.value)} placeholder="Entidad" className="bg-transparent flex-1 font-bold text-sm outline-none" /><span className="text-gray-300">|</span><input value={it.tna} onChange={e => updComp(i, 'tna', e.target.value)} className="bg-transparent w-10 font-bold text-sm outline-none" /><span className="text-gray-400 text-sm">%</span></div>
-              <span className="text-green-600 font-bold text-sm">+ $ {Math.round(compSim.amount * (it.tna / 100) * (30 / 365)).toLocaleString()}</span>
+              <span className="text-green-600 font-bold text-sm">+ $ {fmtARS(Math.round(compSim.amount * (it.tna / 100) * (30 / 365)))}</span>
               <button onClick={() => setCompSim({ ...compSim, items: compSim.items.filter((_, j) => j !== i) })} className="text-red-400"><Trash2 size={14} /></button>
             </div>
           ))}
@@ -1171,11 +1171,11 @@ export default function App() {
               <span className="text-[#86868B] font-medium text-xs tracking-wide uppercase">Neto para Gastar</span>
               <div className="flex items-baseline gap-1 mt-1">
                 <span className="text-xl font-light text-[#86868B]">$</span>
-                <h2 className="text-4xl font-semibold tracking-tighter">{liquidBalance.toLocaleString('es-AR')}</h2>
+                <h2 className="text-4xl font-semibold tracking-tighter">{fmtARS(liquidBalance)}</h2>
               </div>
               <div className="mt-4 pt-3 border-t border-gray-100 grid grid-cols-3 gap-2 text-center">
-                <div><p className="text-[10px] text-green-500 font-bold uppercase">Ingresos</p><p className="text-sm font-bold text-green-600 mt-0.5">$ {monthlyStats.income.toLocaleString()}</p></div>
-                <div><p className="text-[10px] text-red-500 font-bold uppercase flex items-center justify-center gap-0.5"><Flame size={9} />Gastos</p><p className="text-sm font-bold text-red-500 mt-0.5">$ {monthlyStats.expense.toLocaleString()}</p></div>
+                <div><p className="text-[10px] text-green-500 font-bold uppercase">Ingresos</p><p className="text-sm font-bold text-green-600 mt-0.5">$ {fmtARS(monthlyStats.income)}</p></div>
+                <div><p className="text-[10px] text-red-500 font-bold uppercase flex items-center justify-center gap-0.5"><Flame size={9} />Gastos</p><p className="text-sm font-bold text-red-500 mt-0.5">$ {fmtARS(monthlyStats.expense)}</p></div>
                 <div><p className="text-[10px] text-gray-400 font-bold uppercase">Impacto</p><p className="text-sm font-bold text-gray-700 mt-0.5">{percentageBurn.toFixed(0)}%</p></div>
               </div>
             </div>
@@ -1198,13 +1198,13 @@ export default function App() {
                 <>
                   <div className="grid grid-cols-3 gap-2 mb-3">
                     {[{ label: 'Blue', val: dolarRates.blue }, { label: 'Oficial', val: dolarRates.oficial }, { label: 'MEP', val: dolarRates.mep }].map(({ label, val }) => (
-                      <div key={label}><p className="text-[10px] text-gray-400 uppercase">{label}</p><p className="text-base font-bold">$ {val.toLocaleString()}</p></div>
+                      <div key={label}><p className="text-[10px] text-gray-400 uppercase">{label}</p><p className="text-base font-bold">$ {fmtARS(val)}</p></div>
                     ))}
                   </div>
                   {usdTotal > 0 && (
                     <div className="bg-white/10 rounded-xl p-2.5 flex justify-between items-center">
-                      <span className="text-xs text-gray-300">Tus u$s {usdTotal.toLocaleString()}</span>
-                      <span className="text-sm font-bold text-green-400">≈ $ {(usdTotal * dolarRates.blue).toLocaleString()}</span>
+                      <span className="text-xs text-gray-300">Tus u$s {fmtARS(usdTotal)}</span>
+                      <span className="text-sm font-bold text-green-400">≈ $ {fmtARS((usdTotal * dolarRates.blue))}</span>
                     </div>
                   )}
                   <p className="text-[10px] text-gray-500 mt-2 text-right">Act. {dolarRates.updatedAt} · dolarapi.com</p>
@@ -1229,7 +1229,7 @@ export default function App() {
                     <div key={b.category} className="px-4 py-3 border-b border-gray-50 last:border-0">
                       <div className="flex justify-between items-center mb-1.5">
                         <span className="text-sm font-bold">{getCategoryEmoji(b.category)} {b.category}</span>
-                        <span className={`text-xs font-bold ${isOver ? 'text-red-500' : isWarn ? 'text-yellow-600' : 'text-gray-400'}`}>$ {spent.toLocaleString()} / $ {b.limit.toLocaleString()}</span>
+                        <span className={`text-xs font-bold ${isOver ? 'text-red-500' : isWarn ? 'text-yellow-600' : 'text-gray-400'}`}>$ {fmtARS(spent)} / $ {fmtARS(b.limit)}</span>
                       </div>
                       <div className="h-1.5 bg-gray-100 rounded-full overflow-hidden">
                         <div className="h-full rounded-full transition-all duration-500" style={{ width: `${pct}%`, backgroundColor: isOver ? '#EF4444' : isWarn ? '#F59E0B' : '#10B981' }} />
@@ -1245,12 +1245,12 @@ export default function App() {
               <div className="flex justify-between items-start">
                 <div>
                   <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wide">Patrimonio Neto</span>
-                  <p className="text-2xl font-bold mt-0.5">$ {patrimonioTotal.toLocaleString('es-AR', { maximumFractionDigits: 0 })}</p>
+                  <p className="text-2xl font-bold mt-0.5">$ {fmtARS(Math.round(patrimonioTotal))}</p>
                   {!dolarRates && <p className="text-[10px] text-gray-400 mt-0.5">Convertiendo USD...</p>}
                 </div>
                 <div className="text-right space-y-1 text-sm">
-                  <div><span className="text-[10px] text-gray-400">ARS</span><p className="font-bold">$ {arsTotal.toLocaleString()}</p></div>
-                  {usdTotal > 0 && <div><span className="text-[10px] text-gray-400">USD</span><p className="font-bold text-green-600">u$s {usdTotal.toLocaleString()}</p></div>}
+                  <div><span className="text-[10px] text-gray-400">ARS</span><p className="font-bold">$ {fmtARS(arsTotal)}</p></div>
+                  {usdTotal > 0 && <div><span className="text-[10px] text-gray-400">USD</span><p className="font-bold text-green-600">u$s {fmtARS(usdTotal)}</p></div>}
                 </div>
               </div>
             </div>
@@ -1287,7 +1287,7 @@ export default function App() {
                     <div><p className="font-bold text-sm">{t.description}</p><p className="text-xs text-gray-400">{t.account} · {t.date}</p></div>
                   </div>
                   <span className={`font-bold text-sm ml-2 flex-shrink-0 ${t.type === 'ingreso' ? 'text-green-600' : t.type === 'transferencia' ? 'text-blue-600' : 'text-black'}`}>
-                    {t.type === 'ingreso' ? '+' : t.type === 'transferencia' ? '↔' : '-'} ${t.amount.toLocaleString()}
+                    {t.type === 'ingreso' ? '+' : t.type === 'transferencia' ? '↔' : '-'} ${fmtARS(t.amount)}
                   </span>
                 </div>
               ))}
@@ -1319,14 +1319,14 @@ export default function App() {
                             <div className={`w-12 h-12 rounded-xl flex items-center justify-center ${conf.bg}`}><TypeIcon size={22} style={{ color: conf.color }} /></div>
                             <div>
                               <p className="font-bold">{acc.name}</p>
-                              {isCredit && available !== null && <p className="text-[11px] text-gray-400">Disponible: $ {available.toLocaleString()}</p>}
+                              {isCredit && available !== null && <p className="text-[11px] text-gray-400">Disponible: $ {fmtARS(available)}</p>}
                               {acc.currency === 'USD' && <p className="text-[11px] text-gray-400">Cuenta en dólares</p>}
                             </div>
                           </div>
                           <div className="text-right">
                             {isCredit
-                              ? <><p className="font-bold text-base text-red-500">- $ {debt.toLocaleString()}</p><p className="text-[10px] text-red-400 font-bold uppercase">Deuda</p></>
-                              : <p className="font-bold text-base">{acc.currency === 'USD' ? 'u$s' : '$'} {acc.current.toLocaleString()}</p>
+                              ? <><p className="font-bold text-base text-red-500">- $ {fmtARS(debt)}</p><p className="text-[10px] text-red-400 font-bold uppercase">Deuda</p></>
+                              : <p className="font-bold text-base">{acc.currency === 'USD' ? 'u$s' : '$'} {fmtARS(acc.current)}</p>
                             }
                           </div>
                         </div>
@@ -1360,7 +1360,7 @@ export default function App() {
                     </div>
                   </div>
                   <span className={`font-bold text-sm ml-2 flex-shrink-0 ${t.type === 'ingreso' ? 'text-green-600' : t.type === 'transferencia' ? 'text-blue-600' : 'text-black'}`}>
-                    {t.type === 'ingreso' ? '+' : t.type === 'transferencia' ? '↔' : '-'} ${t.amount.toLocaleString()}
+                    {t.type === 'ingreso' ? '+' : t.type === 'transferencia' ? '↔' : '-'} ${fmtARS(t.amount)}
                   </span>
                 </div>
               ))}
