@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect, useRef } from 'react';
+import React, { useState, useMemo, useEffect, useRef, useCallback } from 'react';
 import { supabase } from './supabase';
 import { requestNotificationPermission, checkBudgetAlerts } from './notifications';
 import { AdBanner } from './AdBanner';
@@ -660,6 +660,110 @@ const HelpView = ({ onBack }: { onBack: () => void }) => (
 );
 
 // ============================================================
+// PANTALLA DE BLOQUEO
+// ============================================================
+
+const LockScreen = ({ user, onUnlock, onSignOut }: { user: any; onUnlock: () => void; onSignOut: () => void }) => {
+  const [pass, setPass] = useState('');
+  const [error, setError] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [biometricAvailable, setBiometricAvailable] = useState(false);
+
+  useEffect(() => {
+    // Detectar si hay autenticación biométrica (Face ID / Touch ID) disponible
+    if (window.PublicKeyCredential) {
+      (window.PublicKeyCredential as any).isUserVerifyingPlatformAuthenticatorAvailable?.()
+        .then((available: boolean) => setBiometricAvailable(available))
+        .catch(() => setBiometricAvailable(false));
+    }
+  }, []);
+
+  const unlock = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!pass) return setError('Ingresá tu contraseña');
+    setLoading(true); setError('');
+    const { error: authError } = await supabase.auth.signInWithPassword({ email: user.email, password: pass });
+    setLoading(false);
+    if (authError) setError('Contraseña incorrecta');
+    else onUnlock();
+  };
+
+  const unlockBiometric = async () => {
+    setError(''); setLoading(true);
+    try {
+      const challenge = new Uint8Array(32);
+      crypto.getRandomValues(challenge);
+      await navigator.credentials.get({
+        publicKey: {
+          challenge,
+          timeout: 60000,
+          userVerification: 'required',
+          rpId: window.location.hostname,
+          allowCredentials: [],
+        }
+      });
+      // Si WebAuthn pasa (biometría OK), renovar sesión de Supabase silenciosamente
+      const { error: sessionError } = await supabase.auth.refreshSession();
+      if (sessionError) throw sessionError;
+      onUnlock();
+    } catch {
+      setError('No se pudo verificar. Usá tu contraseña.');
+    }
+    setLoading(false);
+  };
+
+  return (
+    <div className="fixed inset-0 z-[999] bg-black/95 backdrop-blur-md flex flex-col items-center justify-center p-6 animate-in fade-in">
+      <div className="w-full max-w-xs flex flex-col items-center gap-5">
+        <div className="relative">
+          <img src={user.avatar} className="w-24 h-24 rounded-full border-4 border-white/20 object-cover" />
+          <div className="absolute -bottom-2 -right-2 bg-white/20 rounded-full p-2">
+            <Lock className="text-white" size={16} />
+          </div>
+        </div>
+        <div className="text-center">
+          <p className="text-white font-bold text-xl">{user.name}</p>
+          <p className="text-white/50 text-sm">{user.email}</p>
+        </div>
+        <form onSubmit={unlock} className="w-full space-y-3">
+          <input
+            type="password"
+            value={pass}
+            onChange={e => setPass(e.target.value)}
+            placeholder="Contraseña"
+            autoFocus
+            className="w-full bg-white/10 text-white placeholder:text-white/30 p-4 rounded-2xl outline-none text-center text-lg tracking-widest border border-white/10 focus:border-white/30"
+          />
+          {error && <p className="text-red-400 text-xs text-center">{error}</p>}
+          <button
+            type="submit"
+            disabled={loading}
+            className="w-full bg-white text-black font-bold py-3.5 rounded-2xl disabled:opacity-50"
+          >
+            {loading ? 'Verificando...' : 'Desbloquear'}
+          </button>
+        </form>
+        {biometricAvailable && (
+          <button
+            onClick={unlockBiometric}
+            disabled={loading}
+            className="flex items-center gap-2 text-white/60 text-sm py-2 hover:text-white/90 transition-colors"
+          >
+            <span className="text-xl">🔐</span> Usar Face ID / Touch ID
+          </button>
+        )}
+        <button
+          onClick={onSignOut}
+          className="text-white/30 text-xs mt-2 hover:text-white/60 transition-colors"
+        >
+          Cerrar sesión y salir
+        </button>
+      </div>
+    </div>
+  );
+};
+
+// ============================================================
 // APP PRINCIPAL
 // ============================================================
 
@@ -673,6 +777,9 @@ export default function App() {
   const [showMenu, setShowMenu] = useState(false);
   const [showTransactionModal, setShowTransactionModal] = useState(false);
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
+  const [locked, setLocked] = useState(false);
+  const inactivityTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const hiddenAt = useRef<number | null>(null);
   const [showAccountModal, setShowAccountModal] = useState(false);
   const [showBudgetModal, setShowBudgetModal] = useState(false);
   const [selectedAccountForAction, setSelectedAccountForAction] = useState<AccountItem | null>(null);
@@ -711,6 +818,42 @@ export default function App() {
     });
     return () => subscription.unsubscribe();
   }, []);
+
+  // Bloqueo por inactividad (3 minutos) y al volver del background
+  const resetInactivityTimer = useCallback(() => {
+    if (inactivityTimer.current) clearTimeout(inactivityTimer.current);
+    inactivityTimer.current = setTimeout(() => {
+      setLocked(true);
+    }, 3 * 60 * 1000); // 3 minutos
+  }, []);
+
+  useEffect(() => {
+    if (!currentUser) return;
+    const events = ['mousemove', 'mousedown', 'keydown', 'touchstart', 'scroll', 'click'];
+    events.forEach(e => document.addEventListener(e, resetInactivityTimer, { passive: true }));
+    resetInactivityTimer();
+    return () => {
+      events.forEach(e => document.removeEventListener(e, resetInactivityTimer));
+      if (inactivityTimer.current) clearTimeout(inactivityTimer.current);
+    };
+  }, [currentUser, resetInactivityTimer]);
+
+  useEffect(() => {
+    if (!currentUser) return;
+    const onVisibility = () => {
+      if (document.visibilityState === 'hidden') {
+        hiddenAt.current = Date.now();
+      } else if (document.visibilityState === 'visible' && hiddenAt.current) {
+        // Bloquear si estuvo en background más de 30 segundos
+        if (Date.now() - hiddenAt.current > 30_000) {
+          setLocked(true);
+        }
+        hiddenAt.current = null;
+      }
+    };
+    document.addEventListener('visibilitychange', onVisibility);
+    return () => document.removeEventListener('visibilitychange', onVisibility);
+  }, [currentUser]);
 
   // Cargar datos del usuario desde Supabase
   useEffect(() => {
@@ -806,6 +949,15 @@ export default function App() {
         const { error } = await supabase.auth.resetPasswordForEmail(email);
         return error ? traducirError(error.message) : null;
       }}
+    />
+  );
+
+  // --- LOCK SCREEN ---
+  if (locked && currentUser) return (
+    <LockScreen
+      user={currentUser}
+      onUnlock={() => { setLocked(false); resetInactivityTimer(); }}
+      onSignOut={async () => { await supabase.auth.signOut(); setCurrentUser(null); setLocked(false); }}
     />
   );
 
