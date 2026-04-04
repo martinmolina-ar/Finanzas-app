@@ -62,6 +62,27 @@ interface DolarRates {
   updatedAt: string;
 }
 
+// --- ERRORES EN CASTELLANO ---
+const traducirError = (msg: string): string => {
+  const errores: Record<string, string> = {
+    'Invalid login credentials': 'Email o contraseña incorrectos',
+    'Email not confirmed': 'Confirmá tu email antes de ingresar. Revisá tu bandeja de entrada',
+    'User already registered': 'Ya existe una cuenta con ese email',
+    'email rate limit exceeded': 'Demasiados intentos. Esperá unos minutos y volvé a intentarlo',
+    'Password should be at least 6 characters': 'La contraseña debe tener al menos 6 caracteres',
+    'Unable to validate email address: invalid format': 'El formato del email no es válido',
+    'signup_disabled': 'El registro está deshabilitado temporalmente',
+    'Email already registered': 'Ya existe una cuenta con ese email',
+    'Auth session missing': 'Sesión expirada. Volvé a iniciar sesión',
+    'New password should be different from the old password': 'La nueva contraseña debe ser diferente a la actual',
+    'For security purposes, you can only request this after': 'Por seguridad, esperá unos segundos antes de intentar nuevamente',
+  };
+  for (const [key, value] of Object.entries(errores)) {
+    if (msg.toLowerCase().includes(key.toLowerCase())) return value;
+  }
+  return msg; // Si no hay traducción, mostrar el original
+};
+
 // --- FORMATO ARGENTINO ---
 // "1500.50" → "1.500,50" (para mostrar)
 const fmtARS = (num: number): string => {
@@ -760,15 +781,15 @@ export default function App() {
     <AuthScreen
       onLogin={async (email, password) => {
         const { error } = await supabase.auth.signInWithPassword({ email, password });
-        return error ? (error.message === 'Invalid login credentials' ? 'Email o contraseña incorrectos' : error.message) : null;
+        return error ? traducirError(error.message) : null;
       }}
       onRegister={async (name, email, password) => {
         const { error } = await supabase.auth.signUp({ email, password, options: { data: { name } } });
-        return error ? error.message : null;
+        return error ? traducirError(error.message) : null;
       }}
       onForgot={async (email) => {
         const { error } = await supabase.auth.resetPasswordForEmail(email);
-        return error ? error.message : null;
+        return error ? traducirError(error.message) : null;
       }}
     />
   );
