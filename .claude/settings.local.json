@@ -25,7 +25,15 @@
       "Bash(/usr/bin/git --version)",
       "Bash(/usr/bin/git init:*)",
       "Bash(/usr/bin/git add:*)",
-      "Bash(/usr/bin/git commit:*)"
+      "Bash(/usr/bin/git commit:*)",
+      "Bash(/usr/bin/git remote:*)",
+      "Bash(/usr/bin/git branch:*)",
+      "Bash(/usr/bin/git push:*)",
+      "Bash(/usr/bin/git log:*)",
+      "Bash(cd /Users/martinmolina/Documents/CLAUDE/APP DE FINANZAS PERSONALES/)",
+      "Bash(PATH=/usr/local/bin:$PATH npx vercel --version)",
+      "Bash(PATH=/usr/local/bin:$PATH npx vercel deploy --prod --yes)",
+      "Bash(PATH=/usr/local/bin:$PATH npx @railway/cli --version)"
     ]
   }
 }
