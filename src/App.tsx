@@ -1,4 +1,5 @@
 import React, { useState, useMemo, useEffect, useRef, useCallback } from 'react';
+import * as XLSX from 'xlsx';
 import { supabase } from './supabase';
 import { requestNotificationPermission, checkBudgetAlerts } from './notifications';
 import { AdBanner } from './AdBanner';
@@ -1370,7 +1371,32 @@ export default function App() {
         {/* ── ACTIVIDAD ──────────────────────────────── */}
         {activeTab === 'activity' && (
           <div className="space-y-4 animate-in fade-in">
-            <h2 className="text-2xl font-bold">Actividad</h2>
+            <div className="flex items-center justify-between">
+              <h2 className="text-2xl font-bold">Actividad</h2>
+              <button
+                onClick={() => {
+                  const rows = filteredTxs.map(t => ({
+                    'Fecha': t.date,
+                    'Descripción': t.description,
+                    'Tipo': t.type === 'gasto' ? 'Gasto' : t.type === 'ingreso' ? 'Ingreso' : 'Transferencia',
+                    'Categoría': t.category,
+                    'Cuenta': t.account,
+                    'Cuenta Destino': t.toAccount || '',
+                    'Método': t.method,
+                    'Monto': t.amount,
+                    'Recurrente': t.isRecurring ? 'Sí' : 'No',
+                  }));
+                  const ws = XLSX.utils.json_to_sheet(rows);
+                  ws['!cols'] = [{ wch: 12 }, { wch: 30 }, { wch: 14 }, { wch: 18 }, { wch: 18 }, { wch: 18 }, { wch: 12 }, { wch: 14 }, { wch: 10 }];
+                  const wb = XLSX.utils.book_new();
+                  XLSX.utils.book_append_sheet(wb, ws, 'Movimientos');
+                  XLSX.writeFile(wb, `FinanzasApp_${new Date().toISOString().split('T')[0]}.xlsx`);
+                }}
+                className="flex items-center gap-1.5 bg-green-600 text-white text-xs font-bold px-3 py-2 rounded-xl"
+              >
+                <span>📥</span> Exportar Excel
+              </button>
+            </div>
             <div className="flex items-center bg-white px-3 py-2.5 rounded-xl border shadow-sm gap-2">
               <Search size={16} className="text-gray-400 flex-shrink-0" />
               <input type="text" placeholder="Descripción, categoría, cuenta..." value={activityFilter.search} onChange={e => setActivityFilter({ search: e.target.value })} className="w-full outline-none text-sm" />
