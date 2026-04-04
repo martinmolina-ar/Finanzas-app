@@ -451,7 +451,7 @@ const AuthScreen = ({
     setLoading(true);
     const err = await onForgot(email);
     setLoading(false);
-    if (err) setError(err); else { setSuccessMsg(`Enviamos un mail a ${email}`); setTimeout(() => { setView('login'); setSuccessMsg(''); }, 3000); }
+    if (err) setError(err); else { setSuccessMsg(email); }
   };
 
   return (
@@ -501,10 +501,25 @@ const AuthScreen = ({
         )}
         {view === 'forgot' && (
           <form onSubmit={handleRecover} className="space-y-4">
-            <div className="flex items-center gap-2 mb-2"><button type="button" onClick={() => setView('login')}><ArrowLeft /></button><h2 className="text-xl font-bold">Recuperar</h2></div>
-            {!successMsg
-              ? <><p className="text-sm text-gray-500">Ingresá tu mail para recuperar la clave.</p><input type="email" placeholder="Email" value={email} onChange={e => setEmail(e.target.value)} className="w-full bg-gray-50 p-3 rounded-xl outline-none" /><button className="w-full bg-black text-white font-bold py-3 rounded-xl">Enviar</button></>
-              : <div className="text-center py-4"><CheckCircle2 className="mx-auto text-green-500 mb-2" /><p className="text-green-700 font-bold">¡Listo!</p><p className="text-sm text-gray-500">{successMsg}</p></div>}
+            <div className="flex items-center gap-2 mb-2"><button type="button" onClick={() => { setView('login'); setSuccessMsg(''); setError(''); }}><ArrowLeft /></button><h2 className="text-xl font-bold">Recuperar contraseña</h2></div>
+            {!successMsg ? (
+              <>
+                <p className="text-sm text-gray-500">Ingresá tu email y te mandamos un link para crear una nueva contraseña.</p>
+                {error && <p className="text-red-500 text-xs text-center">{error}</p>}
+                <input type="email" placeholder="Email" value={email} onChange={e => setEmail(e.target.value)} className="w-full bg-gray-50 p-3 rounded-xl outline-none" />
+                <button disabled={loading} className="w-full bg-black text-white font-bold py-3 rounded-xl disabled:opacity-50">{loading ? 'Enviando...' : 'Enviar link'}</button>
+              </>
+            ) : (
+              <div className="text-center py-6 space-y-3">
+                <div className="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mx-auto">
+                  <CheckCircle2 className="text-green-500" size={36} />
+                </div>
+                <p className="text-green-700 font-bold text-lg">¡Listo!</p>
+                <p className="text-sm text-gray-500">Revisá tu bandeja de entrada en <strong>{email}</strong> y seguí el link para crear una nueva contraseña.</p>
+                <p className="text-xs text-gray-400">Si no lo ves, revisá la carpeta de spam.</p>
+                <button type="button" onClick={() => { setView('login'); setSuccessMsg(''); }} className="w-full bg-indigo-600 text-white font-bold py-3 rounded-xl shadow-lg mt-2">Volver al inicio</button>
+              </div>
+            )}
           </form>
         )}
       </div>
