@@ -112,7 +112,7 @@ app.post('/stripe-webhook', async (req, res) => {
 
 // ─── WHATSAPP BOT ───────────────────────────────────────────────
 
-async function parseTransaction(text) {
+async function parseTransaction(text, accounts = ['Efectivo'], defaultAccount = 'Efectivo') {
   const msg = await anthropic.messages.create({
     model: 'claude-3-5-haiku-20241022',
     max_tokens: 256,
@@ -122,17 +122,22 @@ async function parseTransaction(text) {
 
 Mensaje: "${text}"
 
+Cuentas disponibles del usuario: ${accounts.join(', ')}
+Cuenta por defecto si no se especifica: ${defaultAccount}
+
 JSON esperado:
 {
   "type": "gasto" | "ingreso" | "transferencia",
-  "amount": número,
+  "amount": número entero sin decimales,
   "description": "descripción corta",
   "category": una de ["Comida","Alquiler","Servicios","Ocio","Transporte","Suscripciones","Salud","Varios","Sueldo","Ventas","Intereses","Regalo"],
   "method": "debito" | "credito" | "transferencia" | "efectivo",
-  "account": "Galicia" | "Mercado Pago" | "Efectivo" | "Naranja X"
+  "account": una de las cuentas disponibles
 }
 
-Si no podés identificar algún campo usá valores por defecto sensatos. Si el mensaje no es una transacción respondé: {"error": "no es una transacción"}`
+IMPORTANTE: amount debe ser el número tal como aparece en el mensaje (ej: "1500" → 1500, no convertir a otras unidades).
+Si no podés identificar algún campo usá valores por defecto sensatos.
+Si el mensaje no es una transacción respondé: {"error": "no es una transacción"}`
     }]
   });
   try { return JSON.parse(msg.content[0].text.trim()); }
@@ -151,7 +156,12 @@ app.post('/webhook', async (req, res) => {
   const { data: profile } = await supabase.from('profiles').select('user_id, whatsapp_active').eq('phone', phone).single();
 
   if (!profile) return reply(`No encontré tu cuenta. Vinculá tu número en la app:\n⚙️ Perfil → Vincular WhatsApp\n\nTu número: ${phone}`);
-  if (!profile.whatsapp_active) return reply('Tu plan no incluye el bot de WhatsApp.\n\nActivalo desde la app por $1/mes 👉 Perfil → Planes');
+  if (!profile.whatsapp_active) return reply('Tu plan no incluye el bot de WhatsApp.\n\nActivalo desde la app por $1/mes 👉 Menú → Planes');
+
+  // Obtener cuentas reales del usuario
+  const { data: userAccounts } = await supabase.from('accounts').select('name').eq('user_id', profile.user_id);
+  const accountNames = userAccounts?.map(a => a.name) || [];
+  const defaultAccount = accountNames[0] || 'Efectivo';
 
   if (['resumen', 'balance'].includes(body.toLowerCase())) {
     const today = new Date();
@@ -163,7 +173,7 @@ app.post('/webhook', async (req, res) => {
     return reply(`📊 *Resumen ${today.toLocaleString('es-AR',{month:'long'})}*\n\n✅ Ingresos: $${income.toLocaleString()}\n🔴 Gastos: $${expense.toLocaleString()}\n💰 Balance: $${(income-expense).toLocaleString()}`);
   }
 
-  const tx = await parseTransaction(body);
+  const tx = await parseTransaction(body, accountNames.length ? accountNames : ['Efectivo'], defaultAccount);
   if (tx.error) return reply(`No entendí. Probá:\n• "gasté 2500 en almuerzo"\n• "cobré sueldo 150000"\n\nO escribí *resumen* para ver tu balance.`);
 
   const id = Date.now().toString();
