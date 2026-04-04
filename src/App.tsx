@@ -429,12 +429,25 @@ const AuthScreen = ({
         {view === 'register' && (
           <form onSubmit={handleRegister} className="space-y-4">
             <div className="flex items-center gap-2 mb-2"><button type="button" onClick={() => setView('login')}><ArrowLeft /></button><h2 className="text-xl font-bold">Registro</h2></div>
-            <input type="text" placeholder="Nombre y Apellido" value={name} onChange={e => setName(e.target.value)} className="w-full bg-gray-50 p-3 rounded-xl outline-none" />
-            <input type="email" placeholder="Email" value={email} onChange={e => setEmail(e.target.value)} className="w-full bg-gray-50 p-3 rounded-xl outline-none" />
-            <input type="password" placeholder="Contraseña" value={password} onChange={e => setPassword(e.target.value)} className="w-full bg-gray-50 p-3 rounded-xl outline-none" />
-            <input type="password" placeholder="Confirmar" value={confirmPass} onChange={e => setConfirmPass(e.target.value)} className="w-full bg-gray-50 p-3 rounded-xl outline-none" />
-            {error && <p className="text-red-500 text-xs text-center">{error}</p>}
-            <button disabled={loading} className="w-full bg-indigo-600 text-white font-bold py-3 rounded-xl shadow-lg disabled:opacity-50">{loading ? 'Creando...' : 'Crear Cuenta'}</button>
+            {successMsg ? (
+              <div className="text-center py-6 space-y-3">
+                <div className="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mx-auto">
+                  <CheckCircle2 className="text-green-500" size={36} />
+                </div>
+                <p className="text-green-700 font-bold text-lg">¡Cuenta creada!</p>
+                <p className="text-sm text-gray-500">{successMsg}</p>
+                <button type="button" onClick={() => { setView('login'); setSuccessMsg(''); }} className="w-full bg-indigo-600 text-white font-bold py-3 rounded-xl shadow-lg mt-2">Ir al login</button>
+              </div>
+            ) : (
+              <>
+                <input type="text" placeholder="Nombre y Apellido" value={name} onChange={e => setName(e.target.value)} className="w-full bg-gray-50 p-3 rounded-xl outline-none" />
+                <input type="email" placeholder="Email" value={email} onChange={e => setEmail(e.target.value)} className="w-full bg-gray-50 p-3 rounded-xl outline-none" />
+                <input type="password" placeholder="Contraseña" value={password} onChange={e => setPassword(e.target.value)} className="w-full bg-gray-50 p-3 rounded-xl outline-none" />
+                <input type="password" placeholder="Confirmar" value={confirmPass} onChange={e => setConfirmPass(e.target.value)} className="w-full bg-gray-50 p-3 rounded-xl outline-none" />
+                {error && <p className="text-red-500 text-xs text-center">{error}</p>}
+                <button disabled={loading} className="w-full bg-indigo-600 text-white font-bold py-3 rounded-xl shadow-lg disabled:opacity-50">{loading ? 'Creando...' : 'Crear Cuenta'}</button>
+              </>
+            )}
           </form>
         )}
         {view === 'forgot' && (
