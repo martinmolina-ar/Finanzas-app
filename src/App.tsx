@@ -1286,6 +1286,12 @@ export default function App() {
                 <button onClick={() => { changeTab('accounts'); setTimeout(() => openAccModal(), 100); }} className="w-full bg-black text-white font-bold py-3 rounded-2xl flex items-center justify-center gap-2">
                   <Plus size={18} /> Agregar mi primera cuenta
                 </button>
+                <div className="bg-gray-50 rounded-2xl p-4 text-left space-y-2 mt-2">
+                  <p className="text-xs font-bold text-gray-500 uppercase tracking-wide">📋 Cómo funciona</p>
+                  <p className="text-xs text-gray-400">• Todo se carga <strong>manualmente</strong> — vos ingresás tus movimientos a mano o por WhatsApp.</p>
+                  <p className="text-xs text-gray-400">• <strong>No se conecta</strong> a tu banco ni accede a tus cuentas.</p>
+                  <p className="text-xs text-gray-400">• No pedimos DNI, CUIL ni datos sensibles.</p>
+                </div>
               </div>
             )}
 
