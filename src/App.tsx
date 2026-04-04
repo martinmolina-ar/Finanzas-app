@@ -1032,16 +1032,20 @@ export default function App() {
     if (accForm.id) {
       const old = accountBalances.find(a => a.id === accForm.id);
       const newBal = parseInput(accForm.balance);
-      if (old && old.current !== newBal) {
-        const diff = newBal - old.current;
-        if (confirm(`¿Registrar ${diff > 0 ? 'Ingreso' : 'Gasto'} de ajuste por $${Math.abs(diff).toLocaleString()}?`)) {
-          const adj = { id: Date.now().toString(), amount: Math.abs(diff), description: 'Ajuste Manual', category: 'Ajuste', account: accForm.name, method: 'efectivo' as PaymentMethod, type: (diff > 0 ? 'ingreso' : 'gasto') as TransactionType, date: new Date().toISOString().split('T')[0], incomeType: 'variable' as IncomeType };
-          await supabase.from('transactions').insert({ ...adj, user_id: currentUser.id, to_account: null, is_recurring: false });
-          setTransactions([adj, ...transactions]);
-        }
+      // Recalcular saldo_inicial para que el saldo_actual coincida con lo ingresado,
+      // sin crear ninguna transacción de ajuste.
+      // saldo_actual = saldo_inicial + ingresos - gastos - transferencias_salida + transferencias_entrada
+      // => saldo_inicial_nuevo = newBal - (ingresos - gastos - transf_salida + transf_entrada)
+      let newInitialBalance = newBal;
+      if (old) {
+        const income = transactions.filter(t => t.type === 'ingreso' && t.account === old.name).reduce((s, t) => s + t.amount, 0);
+        const expense = transactions.filter(t => t.type === 'gasto' && t.account === old.name).reduce((s, t) => s + t.amount, 0);
+        const transferOut = transactions.filter(t => t.type === 'transferencia' && t.account === old.name).reduce((s, t) => s + t.amount, 0);
+        const transferIn = transactions.filter(t => t.type === 'transferencia' && t.toAccount === old.name).reduce((s, t) => s + t.amount, 0);
+        newInitialBalance = newBal - income + expense + transferOut - transferIn;
       }
-      await supabase.from('accounts').update({ name: accForm.name, provider: accForm.provider, type: accForm.type, currency: accForm.currency, limit_amount: accForm.limit ? parseInput(accForm.limit) : null }).eq('id', accForm.id);
-      setAccountsList(accountsList.map(a => a.id === accForm.id ? { ...a, name: accForm.name, provider: accForm.provider, type: accForm.type, currency: accForm.currency, limit: parseInput(accForm.limit) } : a));
+      await supabase.from('accounts').update({ name: accForm.name, provider: accForm.provider, type: accForm.type, currency: accForm.currency, initial_balance: newInitialBalance, limit_amount: accForm.limit ? parseInput(accForm.limit) : null }).eq('id', accForm.id);
+      setAccountsList(accountsList.map(a => a.id === accForm.id ? { ...a, name: accForm.name, provider: accForm.provider, type: accForm.type, currency: accForm.currency, initialBalance: newInitialBalance, limit: parseInput(accForm.limit) } : a));
     } else {
       const newAcc = { ...accForm, id: Date.now().toString(), initialBalance: parseInput(accForm.balance), limit: accForm.limit ? parseInput(accForm.limit) : undefined };
       await supabase.from('accounts').insert({ id: newAcc.id, user_id: currentUser.id, name: newAcc.name, provider: newAcc.provider, initial_balance: newAcc.initialBalance, limit_amount: newAcc.limit || null, type: newAcc.type, currency: newAcc.currency });
@@ -1498,7 +1502,7 @@ export default function App() {
               {accForm.type === 'credito' && (
                 <div><label className="text-[10px] font-bold text-gray-400 uppercase ml-1">Límite de la Tarjeta</label><input type="text" inputMode="decimal" placeholder="0" value={accForm.limit} onChange={e => setAccForm({ ...accForm, limit: formatInput(e.target.value) })} className="w-full bg-gray-50 p-3 rounded-xl border mt-1" /></div>
               )}
-              {accForm.id && <p className="text-xs text-gray-400 p-2 bg-gray-50 rounded-xl">ℹ️ Al cambiar el saldo se creará un ajuste automático.</p>}
+              {accForm.id && <p className="text-xs text-gray-400 p-2 bg-gray-50 rounded-xl">✏️ Podés corregir el saldo sin que se genere ningún movimiento.</p>}
               <button className="w-full bg-black text-white font-bold py-3 rounded-2xl">Guardar</button>
             </form>
           </div>
