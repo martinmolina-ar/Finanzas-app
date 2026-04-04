@@ -1,0 +1,12 @@
+<svg xmlns='http://www.w3.org/2000/svg' width='192' height='192' viewBox='0 0 192 192'>
+  <rect width='192' height='192' rx='42.24' fill='black'/>
+  <g transform='translate(42.24,42.24)'>
+    <svg width='107.52000000000001' height='107.52000000000001' viewBox='0 0 24 24' fill='none' stroke='white' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'>
+      <path d='M20 12V22H4V12'/>
+      <path d='M22 7H2V12H22V7Z'/>
+      <path d='M12 22V7'/>
+      <path d='M12 7H7.5C6.12 7 5 5.88 5 4.5S6.12 2 7.5 2C10 2 12 7 12 7Z'/>
+      <path d='M12 7H16.5C17.88 7 19 5.88 19 4.5S17.88 2 16.5 2C14 2 12 7 12 7Z'/>
+    </svg>
+  </g>
+</svg>

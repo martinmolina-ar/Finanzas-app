@@ -1,0 +1,31 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npm install:*)",
+      "mcp__Claude_Preview__preview_start",
+      "Bash(npm --version)",
+      "Read(//usr/local/lib/node_modules/npm/bin/**)",
+      "Read(//Users/martinmolina/.nvm/**)",
+      "Bash(command -v npm)",
+      "Bash(/usr/local/bin/npm --version)",
+      "Bash(/usr/local/bin/node --version)",
+      "Read(//usr/local/bin/**)",
+      "Read(//opt/homebrew/**)",
+      "Read(//opt/**)",
+      "Bash(PATH=/usr/local/bin:$PATH node --version)",
+      "Bash(PATH=/usr/local/bin:$PATH npm --version)",
+      "Bash(PATH=/usr/local/bin:$PATH npm run build)",
+      "Bash(PATH=/usr/local/bin:$PATH npm install -D vite-plugin-pwa)",
+      "Bash(PATH=/usr/local/bin:$PATH node -e \":*)",
+      "Bash(PATH=/usr/local/bin:$PATH npm install stripe)",
+      "Bash(git config:*)",
+      "Bash(gh auth:*)",
+      "Bash(PATH=/usr/local/bin:$PATH git config --global user.name)",
+      "Bash(PATH=/usr/local/bin:$PATH git config --global user.email)",
+      "Bash(/usr/bin/git --version)",
+      "Bash(/usr/bin/git init:*)",
+      "Bash(/usr/bin/git add:*)",
+      "Bash(/usr/bin/git commit:*)"
+    ]
+  }
+}

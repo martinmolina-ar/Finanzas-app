@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "Vite Dev Server",
+      "runtimeExecutable": "/usr/local/bin/node",
+      "runtimeArgs": ["/Users/martinmolina/Documents/CLAUDE/APP DE FINANZAS PERSONALES/node_modules/.bin/vite"],
+      "port": 5173
+    }
+  ]
+}
