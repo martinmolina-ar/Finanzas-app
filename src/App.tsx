@@ -154,6 +154,9 @@ const INITIAL_ACCOUNTS: AccountItem[] = [
 ];
 
 const FAQS = [
+  { q: "¿Se conecta con mi banco?", a: "No. FinanzasApp no tiene integración con bancos ni acceso a tus cuentas. Todo se carga manualmente: vos ingresás tus movimientos a mano o mediante el bot de WhatsApp." },
+  { q: "¿Necesito dar mis datos reales?", a: "No. Solo necesitás un email y contraseña para registrarte. El nombre puede ser un apodo. No pedimos DNI, CUIL ni ningún dato de identidad." },
+  { q: "¿Los saldos son reales o estimados?", a: "Son los que vos cargás. La app calcula tu saldo sumando el balance inicial más los movimientos registrados. Si no cargás un gasto, no aparece." },
   { q: "¿Cómo agrego un gasto recurrente?", a: "Activá 'Recurrente / Fijo' al crear un movimiento." },
   { q: "¿Qué es 'Neto para Gastar'?", a: "Tu liquidez real (Bancos + Efectivo en ARS). No incluye ahorros ni inversiones." },
   { q: "¿Cómo funcionan los presupuestos?", a: "Definís un límite por categoría. La barra se llena según lo que gastaste ese mes." },
@@ -440,7 +443,11 @@ const AuthScreen = ({
               </div>
             ) : (
               <>
-                <input type="text" placeholder="Nombre y Apellido" value={name} onChange={e => setName(e.target.value)} className="w-full bg-gray-50 p-3 rounded-xl outline-none" />
+                <div className="bg-blue-50 rounded-xl p-3 space-y-1">
+                  <p className="text-xs font-bold text-blue-700">🔒 Tu privacidad es prioridad</p>
+                  <p className="text-[11px] text-blue-600 leading-relaxed">Solo necesitás un email y contraseña. El nombre puede ser cualquiera — no pedimos DNI ni datos personales reales. No tenemos acceso a tus cuentas bancarias; todo lo cargás vos manualmente.</p>
+                </div>
+                <input type="text" placeholder="Nombre (puede ser un apodo)" value={name} onChange={e => setName(e.target.value)} className="w-full bg-gray-50 p-3 rounded-xl outline-none" />
                 <input type="email" placeholder="Email" value={email} onChange={e => setEmail(e.target.value)} className="w-full bg-gray-50 p-3 rounded-xl outline-none" />
                 <input type="password" placeholder="Contraseña" value={password} onChange={e => setPassword(e.target.value)} className="w-full bg-gray-50 p-3 rounded-xl outline-none" />
                 <input type="password" placeholder="Confirmar" value={confirmPass} onChange={e => setConfirmPass(e.target.value)} className="w-full bg-gray-50 p-3 rounded-xl outline-none" />
@@ -922,6 +929,9 @@ export default function App() {
               </div>
             </div>
 
+            {/* Aviso carga manual */}
+            <p className="text-[10px] text-gray-400 text-center -mt-2">✏️ Todos los datos son ingresados manualmente · Sin conexión a bancos</p>
+
             {/* Ad Banner — solo para usuarios free */}
             {!userPlan.noAds && <AdBanner onUpgrade={() => setShowUpgradeModal(true)} />}
 
@@ -1223,6 +1233,7 @@ export default function App() {
           <div className="bg-white rounded-t-[2rem] sm:rounded-[2rem] p-6 w-full sm:max-w-sm" onClick={e => e.stopPropagation()}>
             <div className="flex justify-between items-center mb-5"><h3 className="text-xl font-bold">{accForm.id ? 'Editar' : 'Nueva'} Cuenta</h3><button onClick={() => setShowAccountModal(false)} className="p-2 bg-gray-100 rounded-full"><X size={18} /></button></div>
             <form onSubmit={handleSaveAccount} className="space-y-4">
+              {!accForm.id && <p className="text-[11px] text-gray-400 bg-gray-50 p-3 rounded-xl">ℹ️ <strong>Carga manual:</strong> FinanzasApp no se conecta a tu banco. Ingresá el saldo actual y registrá tus movimientos a mano o por WhatsApp.</p>}
               <div><label className="text-[10px] font-bold text-gray-400 uppercase ml-1">Banco / Entidad</label><select value={accForm.provider} onChange={e => setAccForm({ ...accForm, provider: e.target.value })} className="w-full bg-gray-50 p-3 rounded-xl border mt-1">{Object.keys(BANK_CONFIG).map(k => <option key={k} value={k}>{BANK_CONFIG[k].label}</option>)}</select></div>
               <div><label className="text-[10px] font-bold text-gray-400 uppercase ml-1">Nombre</label><input placeholder="Ej: Galicia Ahorro" value={accForm.name} onChange={e => setAccForm({ ...accForm, name: e.target.value })} className="w-full bg-gray-50 p-3 rounded-xl border mt-1" /></div>
               <div>
