@@ -777,9 +777,20 @@ export default function App() {
   const [showMenu, setShowMenu] = useState(false);
   const [showTransactionModal, setShowTransactionModal] = useState(false);
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
-  const [locked, setLocked] = useState(false);
+  const [locked, setLocked] = useState(() => localStorage.getItem('appLocked') === 'true');
   const inactivityTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const hiddenAt = useRef<number | null>(null);
+
+  // Función para bloquear — persiste en localStorage para que nuevas pestañas también bloqueen
+  const lockApp = useCallback(() => {
+    localStorage.setItem('appLocked', 'true');
+    setLocked(true);
+  }, []);
+
+  const unlockApp = useCallback(() => {
+    localStorage.removeItem('appLocked');
+    setLocked(false);
+  }, []);
   const [showAccountModal, setShowAccountModal] = useState(false);
   const [showBudgetModal, setShowBudgetModal] = useState(false);
   const [selectedAccountForAction, setSelectedAccountForAction] = useState<AccountItem | null>(null);
@@ -828,9 +839,9 @@ export default function App() {
   const resetInactivityTimer = useCallback(() => {
     if (inactivityTimer.current) clearTimeout(inactivityTimer.current);
     inactivityTimer.current = setTimeout(() => {
-      setLocked(true);
+      lockApp();
     }, 3 * 60 * 1000); // 3 minutos
-  }, []);
+  }, [lockApp]);
 
   useEffect(() => {
     if (!currentUser) return;
@@ -851,7 +862,7 @@ export default function App() {
       } else if (document.visibilityState === 'visible' && hiddenAt.current) {
         // Bloquear si estuvo en background más de 30 segundos
         if (Date.now() - hiddenAt.current > 30_000) {
-          setLocked(true);
+          lockApp();
         }
         hiddenAt.current = null;
       }
@@ -859,6 +870,17 @@ export default function App() {
     document.addEventListener('visibilitychange', onVisibility);
     return () => document.removeEventListener('visibilitychange', onVisibility);
   }, [currentUser]);
+
+  // Sincronizar bloqueo entre pestañas via localStorage events
+  useEffect(() => {
+    const onStorage = (e: StorageEvent) => {
+      if (e.key === 'appLocked') {
+        setLocked(e.newValue === 'true');
+      }
+    };
+    window.addEventListener('storage', onStorage);
+    return () => window.removeEventListener('storage', onStorage);
+  }, []);
 
   // Cargar datos del usuario desde Supabase
   useEffect(() => {
@@ -961,8 +983,8 @@ export default function App() {
   if (locked && currentUser) return (
     <LockScreen
       user={currentUser}
-      onUnlock={() => { setLocked(false); resetInactivityTimer(); }}
-      onSignOut={async () => { await supabase.auth.signOut(); setCurrentUser(null); setLocked(false); }}
+      onUnlock={() => { unlockApp(); resetInactivityTimer(); }}
+      onSignOut={async () => { unlockApp(); await supabase.auth.signOut(); setCurrentUser(null); }}
     />
   );
 
