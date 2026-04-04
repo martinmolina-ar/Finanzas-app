@@ -22,7 +22,7 @@ app.use(express.json());
 
 // CORS para la app
 app.use((req, res, next) => {
-  res.header('Access-Control-Allow-Origin', process.env.APP_URL || '*');
+  res.header('Access-Control-Allow-Origin', (process.env.APP_URL || '*').trim());
   res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization');
   res.header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
   if (req.method === 'OPTIONS') return res.sendStatus(200);
