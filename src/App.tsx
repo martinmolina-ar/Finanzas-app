@@ -1164,7 +1164,7 @@ export default function App() {
                   <input type="date" value={transForm.date} onChange={e => setTransForm({ ...transForm, date: e.target.value })} className="bg-transparent font-medium text-sm outline-none text-gray-600" />
                 </div>
               </div>
-              <input type="number" placeholder="$ 0" className="w-full text-center text-4xl font-bold outline-none py-2" autoFocus onChange={e => setTransForm({ ...transForm, amount: e.target.value })} value={transForm.amount} />
+              <input type="text" inputMode="decimal" placeholder="$ 0" className="w-full text-center text-4xl font-bold outline-none py-2" autoFocus onChange={e => setTransForm({ ...transForm, amount: e.target.value.replace(',', '.') })} value={transForm.amount} />
               <input placeholder="Descripción" className="w-full border-b py-2 outline-none text-base" onChange={e => setTransForm({ ...transForm, description: e.target.value })} value={transForm.description} />
               <div className="grid grid-cols-2 gap-2">
                 <div>
