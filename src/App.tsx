@@ -766,7 +766,12 @@ export default function App() {
 
   const changeTab = (tab: string) => { setActiveTab(tab); setShowMenu(false); };
   const handleLogout = async () => { await supabase.auth.signOut(); setActiveTab('dashboard'); setShowMenu(false); };
-  const handleUpdateProfile = (data: any) => setCurrentUser({ ...currentUser, ...data });
+  const handleUpdateProfile = async (data: any) => {
+    setCurrentUser({ ...currentUser, ...data });
+    if (data.name || data.email) {
+      await supabase.auth.updateUser({ data: { name: data.name || currentUser.name } });
+    }
+  };
 
   const handleSaveTransaction = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -783,6 +788,7 @@ export default function App() {
   };
 
   const handleDeleteTransaction = async (id: string) => {
+    if (!confirm('¿Eliminar este movimiento?')) return;
     await supabase.from('transactions').delete().eq('id', id);
     setTransactions(transactions.filter(t => t.id !== id));
     setShowTransactionModal(false);
@@ -815,8 +821,8 @@ export default function App() {
     if (tx) {
       setTransForm({ id: tx.id, amount: tx.amount.toString(), description: tx.description, type: tx.type, category: tx.category, account: tx.account, toAccount: tx.toAccount || '', method: tx.method, date: tx.date, isRecurring: tx.isRecurring || false, incomeType: tx.incomeType || 'fijo' });
     } else {
-      const def = accountName || accountsList[0].name;
-      setTransForm({ id: '', amount: '', description: '', type, category: CATEGORIES[type][0], account: def, toAccount: accountsList.find(a => a.name !== def)?.name || accountsList[0].name, method: 'debito', date: new Date().toISOString().split('T')[0], isRecurring: false, incomeType: 'fijo' });
+      const def = accountName || accountsList[0]?.name || '';
+      setTransForm({ id: '', amount: '', description: '', type, category: CATEGORIES[type][0], account: def, toAccount: accountsList.find(a => a.name !== def)?.name || '', method: 'debito', date: new Date().toISOString().split('T')[0], isRecurring: false, incomeType: 'fijo' });
     }
     setShowTransactionModal(true);
   };
@@ -988,13 +994,32 @@ export default function App() {
               </div>
             </div>
 
+            {/* Empty state para usuario nuevo */}
+            {accountsList.length === 0 && (
+              <div className="bg-white rounded-[2rem] p-6 shadow-sm border border-gray-100 text-center space-y-4">
+                <div className="text-5xl">👋</div>
+                <h3 className="font-bold text-lg">¡Bienvenido a FinanzasApp!</h3>
+                <p className="text-sm text-gray-500">Empezá agregando tus cuentas bancarias para ver tu balance real.</p>
+                <button onClick={() => { changeTab('accounts'); setTimeout(() => openAccModal(), 100); }} className="w-full bg-black text-white font-bold py-3 rounded-2xl flex items-center justify-center gap-2">
+                  <Plus size={18} /> Agregar mi primera cuenta
+                </button>
+              </div>
+            )}
+
             {/* Actividad reciente */}
+            {accountsList.length > 0 && (
             <div className="bg-white rounded-[2rem] shadow-sm border border-gray-100 overflow-hidden">
               <div className="px-4 py-3 border-b border-gray-100 flex justify-between items-center">
                 <span className="font-bold">Actividad Reciente</span>
                 <button onClick={() => changeTab('activity')} className="text-xs text-blue-500 font-bold">Ver todo</button>
               </div>
-              {transactions.slice(0, 4).map((t, i) => (
+              {transactions.length === 0 ? (
+                <div className="text-center py-10 text-gray-400">
+                  <p className="text-3xl mb-2">📋</p>
+                  <p className="text-sm font-medium">Sin movimientos aún</p>
+                  <p className="text-xs mt-1">Usá el botón + para agregar uno</p>
+                </div>
+              ) : transactions.slice(0, 4).map((t, i) => (
                 <div key={t.id} onClick={() => openTxModal(t)} className={`px-4 py-3 flex items-center justify-between cursor-pointer hover:bg-gray-50 ${i !== 3 ? 'border-b border-gray-50' : ''}`}>
                   <div className="flex items-center gap-3">
                     <div className={`w-10 h-10 rounded-full flex items-center justify-center text-base flex-shrink-0 ${t.type === 'ingreso' ? 'bg-green-100' : t.type === 'transferencia' ? 'bg-blue-100' : 'bg-gray-100'}`}>{getCategoryEmoji(t.category)}</div>
@@ -1006,6 +1031,7 @@ export default function App() {
                 </div>
               ))}
             </div>
+            )}
           </div>
         )}
 
@@ -1216,6 +1242,9 @@ export default function App() {
                 </div>
               </div>
               <div><label className="text-[10px] font-bold text-gray-400 uppercase ml-1">Saldo Actual</label><input type="number" placeholder="0" value={accForm.balance} onChange={e => setAccForm({ ...accForm, balance: e.target.value })} className="w-full bg-gray-50 p-3 rounded-xl border mt-1" /></div>
+              {accForm.type === 'credito' && (
+                <div><label className="text-[10px] font-bold text-gray-400 uppercase ml-1">Límite de la Tarjeta</label><input type="number" placeholder="0" value={accForm.limit} onChange={e => setAccForm({ ...accForm, limit: e.target.value })} className="w-full bg-gray-50 p-3 rounded-xl border mt-1" /></div>
+              )}
               {accForm.id && <p className="text-xs text-gray-400 p-2 bg-gray-50 rounded-xl">ℹ️ Al cambiar el saldo se creará un ajuste automático.</p>}
               <button className="w-full bg-black text-white font-bold py-3 rounded-2xl">Guardar</button>
             </form>
