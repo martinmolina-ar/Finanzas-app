@@ -106,7 +106,7 @@ app.post('/stripe-webhook', async (req, res) => {
 
 async function parseTransaction(text) {
   const msg = await anthropic.messages.create({
-    model: 'claude-haiku-4-5-20251001',
+    model: 'claude-3-5-haiku-20241022',
     max_tokens: 256,
     messages: [{
       role: 'user',
@@ -170,4 +170,4 @@ app.post('/webhook', async (req, res) => {
 app.get('/health', (_, res) => res.json({ ok: true }));
 
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => console.log(`Servidor corriendo en puerto ${PORT}`));
+app.listen(PORT, '0.0.0.0', () => console.log(`Servidor corriendo en puerto ${PORT}`));
