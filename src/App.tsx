@@ -62,6 +62,27 @@ interface DolarRates {
   updatedAt: string;
 }
 
+// --- FORMATO ARGENTINO ---
+// "1500.50" → "1.500,50" (para mostrar)
+const fmtARS = (num: number): string => {
+  const [int, dec] = num.toFixed(2).split('.');
+  const intFmt = int.replace(/\B(?=(\d{3})+(?!\d))/g, '.');
+  return dec === '00' ? intFmt : `${intFmt},${dec}`;
+};
+
+// Input mientras el usuario escribe: acepta dígitos y una coma, agrega puntos automáticamente
+const formatInput = (raw: string): string => {
+  const clean = raw.replace(/[^0-9,]/g, '');
+  const [intPart, decPart] = clean.split(',');
+  const intFmt = (intPart || '').replace(/\B(?=(\d{3})+(?!\d))/g, '.');
+  return decPart !== undefined ? `${intFmt},${decPart.slice(0, 2)}` : intFmt;
+};
+
+// "1.500,50" → 1500.50 (para guardar en DB)
+const parseInput = (display: string): number => {
+  return Number(display.replace(/\./g, '').replace(',', '.')) || 0;
+};
+
 // --- CONSTANTES ---
 
 const ACCOUNT_LABELS: Record<AccountType, string> = {
@@ -794,9 +815,9 @@ export default function App() {
   const handleSaveTransaction = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!transForm.account) return alert('Primero agregá una cuenta en la sección Cuentas');
-    if (!transForm.amount || isNaN(Number(transForm.amount))) return alert('Ingresá un monto válido');
+    if (!transForm.amount || parseInput(transForm.amount) === 0) return alert('Ingresá un monto válido');
     if (transForm.type === 'transferencia' && !transForm.toAccount) return alert('Seleccioná una cuenta destino');
-    const tx = { ...transForm, id: transForm.id || Date.now().toString(), amount: Number(transForm.amount) } as Transaction;
+    const tx = { ...transForm, id: transForm.id || Date.now().toString(), amount: parseInput(transForm.amount) } as Transaction;
     const dbRow = { id: tx.id, user_id: currentUser.id, amount: tx.amount, description: tx.description, category: tx.category, account: tx.account, to_account: tx.toAccount || null, method: tx.method, type: tx.type, income_type: tx.incomeType || null, is_recurring: tx.isRecurring || false, date: tx.date };
     if (transForm.id) {
       await supabase.from('transactions').update(dbRow).eq('id', transForm.id);
@@ -818,10 +839,10 @@ export default function App() {
   const handleSaveAccount = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!accForm.name.trim()) return alert('Ingresá un nombre para la cuenta');
-    if (!accForm.id && (accForm.balance === '' || isNaN(Number(accForm.balance)))) return alert('Ingresá un saldo inicial válido');
+    if (!accForm.id && accForm.balance === '') return alert('Ingresá un saldo inicial (puede ser 0)');
     if (accForm.id) {
       const old = accountBalances.find(a => a.id === accForm.id);
-      const newBal = Number(accForm.balance);
+      const newBal = parseInput(accForm.balance);
       if (old && old.current !== newBal) {
         const diff = newBal - old.current;
         if (confirm(`¿Registrar ${diff > 0 ? 'Ingreso' : 'Gasto'} de ajuste por $${Math.abs(diff).toLocaleString()}?`)) {
@@ -830,10 +851,10 @@ export default function App() {
           setTransactions([adj, ...transactions]);
         }
       }
-      await supabase.from('accounts').update({ name: accForm.name, provider: accForm.provider, type: accForm.type, currency: accForm.currency, limit_amount: accForm.limit ? Number(accForm.limit) : null }).eq('id', accForm.id);
-      setAccountsList(accountsList.map(a => a.id === accForm.id ? { ...a, name: accForm.name, provider: accForm.provider, type: accForm.type, currency: accForm.currency, limit: Number(accForm.limit) } : a));
+      await supabase.from('accounts').update({ name: accForm.name, provider: accForm.provider, type: accForm.type, currency: accForm.currency, limit_amount: accForm.limit ? parseInput(accForm.limit) : null }).eq('id', accForm.id);
+      setAccountsList(accountsList.map(a => a.id === accForm.id ? { ...a, name: accForm.name, provider: accForm.provider, type: accForm.type, currency: accForm.currency, limit: parseInput(accForm.limit) } : a));
     } else {
-      const newAcc = { ...accForm, id: Date.now().toString(), initialBalance: Number(accForm.balance), limit: accForm.limit ? Number(accForm.limit) : undefined };
+      const newAcc = { ...accForm, id: Date.now().toString(), initialBalance: parseInput(accForm.balance), limit: accForm.limit ? parseInput(accForm.limit) : undefined };
       await supabase.from('accounts').insert({ id: newAcc.id, user_id: currentUser.id, name: newAcc.name, provider: newAcc.provider, initial_balance: newAcc.initialBalance, limit_amount: newAcc.limit || null, type: newAcc.type, currency: newAcc.currency });
       setAccountsList([...accountsList, newAcc]);
     }
@@ -842,7 +863,7 @@ export default function App() {
 
   const openTxModal = (tx?: Transaction, type: TransactionType = 'gasto', accountName?: string) => {
     if (tx) {
-      setTransForm({ id: tx.id, amount: tx.amount.toString(), description: tx.description, type: tx.type, category: tx.category, account: tx.account, toAccount: tx.toAccount || '', method: tx.method, date: tx.date, isRecurring: tx.isRecurring || false, incomeType: tx.incomeType || 'fijo' });
+      setTransForm({ id: tx.id, amount: fmtARS(tx.amount), description: tx.description, type: tx.type, category: tx.category, account: tx.account, toAccount: tx.toAccount || '', method: tx.method, date: tx.date, isRecurring: tx.isRecurring || false, incomeType: tx.incomeType || 'fijo' });
     } else {
       const def = accountName || accountsList[0]?.name || '';
       setTransForm({ id: '', amount: '', description: '', type, category: CATEGORIES[type][0], account: def, toAccount: accountsList.find(a => a.name !== def)?.name || '', method: 'debito', date: new Date().toISOString().split('T')[0], isRecurring: false, incomeType: 'fijo' });
@@ -851,7 +872,7 @@ export default function App() {
   };
 
   const openAccModal = (acc?: any) => {
-    if (acc) setAccForm({ id: acc.id, name: acc.name, provider: acc.provider, balance: acc.current.toString(), type: acc.type, limit: acc.limit?.toString() || '', currency: acc.currency });
+    if (acc) setAccForm({ id: acc.id, name: acc.name, provider: acc.provider, balance: fmtARS(acc.current), type: acc.type, limit: acc.limit ? fmtARS(acc.limit) : '', currency: acc.currency });
     else setAccForm({ id: '', name: '', provider: 'Default', balance: '', type: 'gastos', limit: '', currency: 'ARS' });
     setShowAccountModal(true);
   };
@@ -1181,11 +1202,9 @@ export default function App() {
                   <input type="date" value={transForm.date} onChange={e => setTransForm({ ...transForm, date: e.target.value })} className="bg-transparent font-medium text-sm outline-none text-gray-600" />
                 </div>
               </div>
-              <input type="text" inputMode="numeric" placeholder="$ 0" className="w-full text-center text-4xl font-bold outline-none py-2" autoFocus
+              <input type="text" inputMode="decimal" placeholder="$ 0" className="w-full text-center text-4xl font-bold outline-none py-2" autoFocus
                 onChange={e => {
-                  // Acepta solo números enteros (sin decimales - los montos en pesos no necesitan centavos)
-                  const raw = e.target.value.replace(/[^0-9]/g, '');
-                  setTransForm({ ...transForm, amount: raw });
+                  setTransForm({ ...transForm, amount: formatInput(e.target.value) });
                 }}
                 value={transForm.amount}
               />
@@ -1276,9 +1295,9 @@ export default function App() {
                   ))}
                 </div>
               </div>
-              <div><label className="text-[10px] font-bold text-gray-400 uppercase ml-1">Saldo Actual</label><input type="text" inputMode="numeric" placeholder="0" value={accForm.balance} onChange={e => setAccForm({ ...accForm, balance: e.target.value.replace(/[^0-9]/g, '') })} className="w-full bg-gray-50 p-3 rounded-xl border mt-1" /></div>
+              <div><label className="text-[10px] font-bold text-gray-400 uppercase ml-1">Saldo Actual</label><input type="text" inputMode="decimal" placeholder="0" value={accForm.balance} onChange={e => setAccForm({ ...accForm, balance: formatInput(e.target.value) })} className="w-full bg-gray-50 p-3 rounded-xl border mt-1" /></div>
               {accForm.type === 'credito' && (
-                <div><label className="text-[10px] font-bold text-gray-400 uppercase ml-1">Límite de la Tarjeta</label><input type="text" inputMode="numeric" placeholder="0" value={accForm.limit} onChange={e => setAccForm({ ...accForm, limit: e.target.value.replace(/[^0-9]/g, '') })} className="w-full bg-gray-50 p-3 rounded-xl border mt-1" /></div>
+                <div><label className="text-[10px] font-bold text-gray-400 uppercase ml-1">Límite de la Tarjeta</label><input type="text" inputMode="decimal" placeholder="0" value={accForm.limit} onChange={e => setAccForm({ ...accForm, limit: formatInput(e.target.value) })} className="w-full bg-gray-50 p-3 rounded-xl border mt-1" /></div>
               )}
               {accForm.id && <p className="text-xs text-gray-400 p-2 bg-gray-50 rounded-xl">ℹ️ Al cambiar el saldo se creará un ajuste automático.</p>}
               <button className="w-full bg-black text-white font-bold py-3 rounded-2xl">Guardar</button>
