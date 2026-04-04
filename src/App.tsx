@@ -1181,7 +1181,14 @@ export default function App() {
                   <input type="date" value={transForm.date} onChange={e => setTransForm({ ...transForm, date: e.target.value })} className="bg-transparent font-medium text-sm outline-none text-gray-600" />
                 </div>
               </div>
-              <input type="text" inputMode="decimal" placeholder="$ 0" className="w-full text-center text-4xl font-bold outline-none py-2" autoFocus onChange={e => setTransForm({ ...transForm, amount: e.target.value.replace(',', '.') })} value={transForm.amount} />
+              <input type="text" inputMode="numeric" placeholder="$ 0" className="w-full text-center text-4xl font-bold outline-none py-2" autoFocus
+                onChange={e => {
+                  // Acepta solo números enteros (sin decimales - los montos en pesos no necesitan centavos)
+                  const raw = e.target.value.replace(/[^0-9]/g, '');
+                  setTransForm({ ...transForm, amount: raw });
+                }}
+                value={transForm.amount}
+              />
               <input placeholder="Descripción" className="w-full border-b py-2 outline-none text-base" onChange={e => setTransForm({ ...transForm, description: e.target.value })} value={transForm.description} />
               <div className="grid grid-cols-2 gap-2">
                 <div>
@@ -1269,9 +1276,9 @@ export default function App() {
                   ))}
                 </div>
               </div>
-              <div><label className="text-[10px] font-bold text-gray-400 uppercase ml-1">Saldo Actual</label><input type="number" placeholder="0" value={accForm.balance} onChange={e => setAccForm({ ...accForm, balance: e.target.value })} className="w-full bg-gray-50 p-3 rounded-xl border mt-1" /></div>
+              <div><label className="text-[10px] font-bold text-gray-400 uppercase ml-1">Saldo Actual</label><input type="text" inputMode="numeric" placeholder="0" value={accForm.balance} onChange={e => setAccForm({ ...accForm, balance: e.target.value.replace(/[^0-9]/g, '') })} className="w-full bg-gray-50 p-3 rounded-xl border mt-1" /></div>
               {accForm.type === 'credito' && (
-                <div><label className="text-[10px] font-bold text-gray-400 uppercase ml-1">Límite de la Tarjeta</label><input type="number" placeholder="0" value={accForm.limit} onChange={e => setAccForm({ ...accForm, limit: e.target.value })} className="w-full bg-gray-50 p-3 rounded-xl border mt-1" /></div>
+                <div><label className="text-[10px] font-bold text-gray-400 uppercase ml-1">Límite de la Tarjeta</label><input type="text" inputMode="numeric" placeholder="0" value={accForm.limit} onChange={e => setAccForm({ ...accForm, limit: e.target.value.replace(/[^0-9]/g, '') })} className="w-full bg-gray-50 p-3 rounded-xl border mt-1" /></div>
               )}
               {accForm.id && <p className="text-xs text-gray-400 p-2 bg-gray-50 rounded-xl">ℹ️ Al cambiar el saldo se creará un ajuste automático.</p>}
               <button className="w-full bg-black text-white font-bold py-3 rounded-2xl">Guardar</button>
