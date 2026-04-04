@@ -287,7 +287,7 @@ const ReportsBarChart = ({ historyData }: { historyData: any[] }) => {
 
 // --- MODAL PRESUPUESTOS ---
 
-const BudgetModal = ({ budgets, onSave, onClose }: { budgets: Budget[], onSave: (b: Budget[]) => void, onClose: () => void }) => {
+const BudgetModal = ({ budgets, onSave, onClose, extraCategories = [] }: { budgets: Budget[], onSave: (b: Budget[]) => void, onClose: () => void, extraCategories?: string[] }) => {
   const [local, setLocal] = useState<Budget[]>(budgets);
   const update = (i: number, field: keyof Budget, value: any) => {
     const n = [...local]; n[i] = { ...n[i], [field]: value }; setLocal(n);
@@ -305,7 +305,7 @@ const BudgetModal = ({ budgets, onSave, onClose }: { budgets: Budget[], onSave: 
               <span className="text-2xl">{getCategoryEmoji(b.category)}</span>
               <div className="flex-1 space-y-1">
                 <select value={b.category} onChange={e => update(i, 'category', e.target.value)} className="w-full bg-white p-2 rounded-xl text-sm font-bold outline-none">
-                  {CATEGORIES.gasto.map(c => <option key={c} value={c}>{c}</option>)}
+                  {[...CATEGORIES.gasto, ...extraCategories].map(c => <option key={c} value={c}>{c}</option>)}
                 </select>
                 <div className="relative">
                   <span className="absolute left-3 top-2 text-gray-400 text-sm">$</span>
@@ -797,6 +797,11 @@ export default function App() {
     category: 'Comida', account: '', toAccount: '', method: 'debito' as PaymentMethod,
     date: '', isRecurring: false, incomeType: 'fijo' as IncomeType
   });
+  const [customCategories, setCustomCategories] = useState<Record<string, string[]>>(() => {
+    try { return JSON.parse(localStorage.getItem('customCategories') || '{}'); } catch { return {}; }
+  });
+  const [addingCategory, setAddingCategory] = useState(false);
+  const [newCategoryInput, setNewCategoryInput] = useState('');
 
   // Auth listener
   useEffect(() => {
@@ -1068,6 +1073,22 @@ export default function App() {
     if (acc) setAccForm({ id: acc.id, name: acc.name, provider: acc.provider, balance: fmtARS(acc.current), type: acc.type, limit: acc.limit ? fmtARS(acc.limit) : '', currency: acc.currency });
     else setAccForm({ id: '', name: '', provider: 'Default', balance: '', type: 'gastos', limit: '', currency: 'ARS' });
     setShowAccountModal(true);
+  };
+
+  const allCategories = (type: TransactionType): string[] => [
+    ...CATEGORIES[type],
+    ...(customCategories[type] || []),
+  ];
+
+  const addCustomCategory = (name: string, type: TransactionType) => {
+    const trimmed = name.trim();
+    if (!trimmed) return;
+    const updated = { ...customCategories, [type]: [...(customCategories[type] || []), trimmed] };
+    setCustomCategories(updated);
+    localStorage.setItem('customCategories', JSON.stringify(updated));
+    setTransForm(f => ({ ...f, category: trimmed }));
+    setAddingCategory(false);
+    setNewCategoryInput('');
   };
 
   // ============================================================
@@ -1386,7 +1407,7 @@ export default function App() {
               <div className="flex bg-gray-100 p-1 rounded-xl">
                 {(['gasto', 'ingreso', 'transferencia'] as TransactionType[]).map(t => {
                   if (t === 'transferencia' && accountsList.length < 2) return null;
-                  return <button key={t} type="button" onClick={() => setTransForm({ ...transForm, type: t, category: CATEGORIES[t][0] })} className={`flex-1 py-2 text-xs font-bold rounded-lg uppercase transition-all ${transForm.type === t ? 'bg-white shadow' : ''}`}>{t}</button>;
+                  return <button key={t} type="button" onClick={() => { setTransForm({ ...transForm, type: t, category: allCategories(t as TransactionType)[0] }); setAddingCategory(false); setNewCategoryInput(''); }} className={`flex-1 py-2 text-xs font-bold rounded-lg uppercase transition-all ${transForm.type === t ? 'bg-white shadow' : ''}`}>{t}</button>;
                 })}
               </div>
               <div className="flex justify-center">
@@ -1405,14 +1426,32 @@ export default function App() {
               <div className="grid grid-cols-2 gap-2">
                 <div>
                   <label className="text-[10px] font-bold text-gray-400 uppercase ml-1">Categoría</label>
-                  <select className="w-full bg-gray-50 p-3 rounded-xl text-sm mt-1" value={transForm.category} onChange={e => setTransForm({ ...transForm, category: e.target.value })}>
-                    {CATEGORIES[transForm.type].map(c => <option key={c} value={c}>{c}</option>)}
-                  </select>
+                  {addingCategory ? (
+                    <div className="flex gap-1 mt-1">
+                      <input
+                        autoFocus
+                        type="text"
+                        value={newCategoryInput}
+                        onChange={e => setNewCategoryInput(e.target.value)}
+                        onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); addCustomCategory(newCategoryInput, transForm.type); } }}
+                        placeholder="Nueva categoría"
+                        className="flex-1 bg-gray-50 p-2.5 rounded-xl text-sm outline-none border border-indigo-300 min-w-0"
+                      />
+                      <button type="button" onClick={() => addCustomCategory(newCategoryInput, transForm.type)} className="px-2.5 bg-indigo-600 text-white rounded-xl text-sm font-bold">✓</button>
+                      <button type="button" onClick={() => { setAddingCategory(false); setNewCategoryInput(''); }} className="px-2.5 bg-gray-200 rounded-xl text-sm">✕</button>
+                    </div>
+                  ) : (
+                    <select className="w-full bg-gray-50 p-3 rounded-xl text-sm mt-1" value={transForm.category} onChange={e => { if (e.target.value === '__add__') setAddingCategory(true); else setTransForm({ ...transForm, category: e.target.value }); }}>
+                      {allCategories(transForm.type).map(c => <option key={c} value={c}>{c}</option>)}
+                      <option value="__add__">＋ Agregar categoría...</option>
+                    </select>
+                  )}
                 </div>
                 <div>
                   <label className="text-[10px] font-bold text-gray-400 uppercase ml-1">Cuenta</label>
-                  <select className="w-full bg-gray-50 p-3 rounded-xl text-sm mt-1" value={transForm.account} onChange={e => setTransForm({ ...transForm, account: e.target.value })}>
+                  <select className="w-full bg-gray-50 p-3 rounded-xl text-sm mt-1" value={transForm.account} onChange={e => { if (e.target.value === '__add__') { openAccModal(); } else setTransForm({ ...transForm, account: e.target.value }); }}>
                     {accountsList.map(a => <option key={a.id} value={a.name}>{a.name}</option>)}
+                    <option value="__add__">＋ Nueva cuenta...</option>
                   </select>
                 </div>
               </div>
@@ -1536,7 +1575,7 @@ export default function App() {
       )}
 
       {/* ── MODAL PRESUPUESTOS ───────────────────────── */}
-      {showBudgetModal && <BudgetModal budgets={budgets} onSave={async (newBudgets) => {
+      {showBudgetModal && <BudgetModal budgets={budgets} extraCategories={customCategories['gasto'] || []} onSave={async (newBudgets) => {
         setBudgets(newBudgets);
         await supabase.from('budgets').delete().eq('user_id', currentUser.id);
         if (newBudgets.length) await supabase.from('budgets').insert(newBudgets.map(b => ({ user_id: currentUser.id, category: b.category, limit_amount: b.limit })));
