@@ -240,37 +240,46 @@ const CATEGORY_ICONS: Record<string, any> = {
 
 // --- COMPONENTES VISUALES ---
 
-const ReportsDonut = ({ expensesByCategory, totalExpense }: { expensesByCategory: any[], totalExpense: number }) => (
+const ReportsDonut = ({ data, total, title }: { data: any[], total: number, title: string }) => (
   <div className="bg-white p-6 rounded-[2rem] shadow-sm flex flex-col items-center">
-    <h3 className="font-bold text-gray-800 mb-6 w-full">Gastos por categoría</h3>
-    <div className="relative w-48 h-48 mb-6">
-      <svg viewBox="0 0 100 100" className="w-full h-full -rotate-90">
-        <circle cx="50" cy="50" r="40" fill="transparent" stroke="#F3F4F6" strokeWidth="15" />
-        {expensesByCategory.reduce((acc: any, cat: any, i: number) => {
-          const dash = `${cat.percentage} ${100 - cat.percentage}`;
-          const el = <circle key={i} cx="50" cy="50" r="40" fill="transparent" stroke={cat.color} strokeWidth="15" strokeDasharray={dash} strokeDashoffset={-acc.offset} />;
-          acc.offset += cat.percentage; acc.els.push(el); return acc;
-        }, { offset: 0, els: [] }).els}
-      </svg>
-      <div className="absolute inset-0 flex flex-col items-center justify-center px-3">
-        <span className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Total</span>
-        <span className="text-sm font-bold text-center leading-tight break-all">$ {fmtARS(totalExpense)}</span>
-      </div>
-    </div>
-    <div className="w-full space-y-3">
-      {expensesByCategory.map((cat: any, i: number) => {
-        const Icon = CATEGORY_ICONS[cat.category] || PieChart;
-        return (
-          <div key={i} className="flex justify-between items-center">
-            <div className="flex items-center gap-2">
-              <div className="w-6 h-6 rounded-full flex items-center justify-center text-white" style={{ backgroundColor: cat.color }}><Icon size={12} /></div>
-              <span className="text-sm font-medium">{cat.category}</span>
-            </div>
-            <span className="text-sm font-bold">$ {fmtARS(cat.amount)}</span>
+    <h3 className="font-bold text-gray-800 mb-6 w-full">{title}</h3>
+    {total === 0 ? (
+      <p className="text-sm text-gray-400 py-6">Sin movimientos en este período</p>
+    ) : (
+      <>
+        <div className="relative w-48 h-48 mb-6">
+          <svg viewBox="0 0 100 100" className="w-full h-full -rotate-90">
+            <circle cx="50" cy="50" r="40" fill="transparent" stroke="#F3F4F6" strokeWidth="15" />
+            {data.reduce((acc: any, cat: any, i: number) => {
+              const dash = `${cat.percentage} ${100 - cat.percentage}`;
+              const el = <circle key={i} cx="50" cy="50" r="40" fill="transparent" stroke={cat.color} strokeWidth="15" strokeDasharray={dash} strokeDashoffset={-acc.offset} />;
+              acc.offset += cat.percentage; acc.els.push(el); return acc;
+            }, { offset: 0, els: [] }).els}
+          </svg>
+          <div className="absolute inset-0 flex flex-col items-center justify-center px-3">
+            <span className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Total</span>
+            <span className="text-sm font-bold text-center leading-tight break-all">$ {fmtARS(total)}</span>
           </div>
-        );
-      })}
-    </div>
+        </div>
+        <div className="w-full space-y-3">
+          {data.map((cat: any, i: number) => {
+            const Icon = CATEGORY_ICONS[cat.category] || PieChart;
+            return (
+              <div key={i} className="flex justify-between items-center">
+                <div className="flex items-center gap-2">
+                  <div className="w-6 h-6 rounded-full flex items-center justify-center text-white" style={{ backgroundColor: cat.color }}><Icon size={12} /></div>
+                  <span className="text-sm font-medium">{cat.category}</span>
+                </div>
+                <div className="text-right">
+                  <span className="text-sm font-bold">$ {fmtARS(cat.amount)}</span>
+                  <span className="text-[10px] text-gray-400 ml-2">{cat.percentage.toFixed(1)}%</span>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </>
+    )}
   </div>
 );
 
@@ -378,6 +387,14 @@ const ReportsView = ({ transactions }: { transactions: Transaction[] }) => {
     return { category: cat, amount: val, percentage: total ? (val / total) * 100 : 0, color: CHART_COLORS[i % CHART_COLORS.length] };
   });
 
+  const INCOME_COLORS = ['#10B981', '#059669', '#34D399', '#6EE7B7', '#065F46', '#A7F3D0', '#047857'];
+  const incomesByCategory = Object.entries(
+    reportTransactions.filter(t => t.type === 'ingreso').reduce((acc, t) => ({ ...acc, [t.category]: (acc[t.category] || 0) + t.amount }), {} as Record<string, number>)
+  ).sort((a, b) => b[1] - a[1]).map(([cat, val], i, arr) => {
+    const total = arr.reduce((s, [, v]) => s + v, 0);
+    return { category: cat, amount: val, percentage: total ? (val / total) * 100 : 0, color: INCOME_COLORS[i % INCOME_COLORS.length] };
+  });
+
   const historyData = useMemo(() => {
     const data: any[] = [];
     const current = new Date();
@@ -433,7 +450,8 @@ const ReportsView = ({ transactions }: { transactions: Transaction[] }) => {
         <div className="p-4 border-b border-gray-100 flex justify-between"><span className="text-gray-600">Salidas</span><span className="font-bold text-black">- $ {fmtARS(reportStats.expense)}</span></div>
         <div className="p-4 bg-gray-50 flex justify-between"><span className="font-bold text-gray-800">Balance</span><span className={`font-bold ${balance >= 0 ? 'text-blue-600' : 'text-red-600'}`}>$ {fmtARS(balance)}</span></div>
       </div>
-      <ReportsDonut expensesByCategory={expensesByCategory} totalExpense={reportStats.expense} />
+      <ReportsDonut data={incomesByCategory} total={reportStats.income} title="Ingresos por categoría" />
+      <ReportsDonut data={expensesByCategory} total={reportStats.expense} title="Gastos por categoría" />
       <ReportsBarChart historyData={historyData} />
     </div>
   );
