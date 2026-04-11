@@ -2058,12 +2058,34 @@ export default function App() {
               <button onClick={() => { setShowTransactionModal(false); setConfirmDeleteId(null); }} className="p-2 bg-gray-100 rounded-full"><X size={18} /></button>
             </div>
             <form onSubmit={handleSaveTransaction} className="space-y-4">
-              <div className="flex bg-gray-100 p-1 rounded-xl">
-                {(['gasto', 'ingreso', 'transferencia'] as TransactionType[]).map(t => {
-                  if (t === 'transferencia' && accountsList.length < 2) return null;
-                  return <button key={t} type="button" onClick={() => { setTransForm({ ...transForm, type: t, category: allCategories(t as TransactionType)[0] }); setAddingCategory(false); setNewCategoryInput(''); }} className={`flex-1 py-2 text-xs font-bold rounded-lg uppercase transition-all ${transForm.type === t ? 'bg-white shadow' : ''}`}>{t}</button>;
-                })}
-              </div>
+              {(() => {
+                const creditCards = accountsList.filter(a => a.type === 'credito');
+                const isCreditPayment = transForm.type === 'transferencia' && accountsList.find(a => a.name === transForm.toAccount)?.type === 'credito';
+                return (
+                  <>
+                    <div className="flex bg-gray-100 p-1 rounded-xl">
+                      {(['gasto', 'ingreso', 'transferencia'] as TransactionType[]).map(t => {
+                        if (t === 'transferencia' && accountsList.length < 2) return null;
+                        return <button key={t} type="button" onClick={() => { setTransForm({ ...transForm, type: t, category: allCategories(t as TransactionType)[0] }); setAddingCategory(false); setNewCategoryInput(''); }} className={`flex-1 py-2 text-xs font-bold rounded-lg uppercase transition-all ${transForm.type === t && !isCreditPayment ? 'bg-white shadow' : ''}`}>{t}</button>;
+                      })}
+                      {creditCards.length > 0 && (
+                        <button type="button" onClick={() => {
+                          const firstBank = accountsList.find(a => a.type !== 'credito')?.name || '';
+                          const firstCard = creditCards[0].name;
+                          setTransForm({ ...transForm, type: 'transferencia', account: firstBank, toAccount: firstCard, description: `Pago ${firstCard}`, category: 'Transferencia' });
+                          setAddingCategory(false);
+                        }} className={`flex-1 py-2 text-xs font-bold rounded-lg transition-all ${isCreditPayment ? 'bg-purple-600 text-white shadow' : ''}`}>💳 Tarjeta</button>
+                      )}
+                    </div>
+                    {isCreditPayment && (
+                      <div className="flex items-center gap-2 bg-purple-50 rounded-xl px-3 py-2">
+                        <CreditCard size={14} className="text-purple-600 flex-shrink-0" />
+                        <p className="text-xs text-purple-700 font-medium">Pago de tarjeta — reduce la deuda de la tarjeta seleccionada</p>
+                      </div>
+                    )}
+                  </>
+                );
+              })()}
               <div className="flex justify-center">
                 <div className="flex items-center gap-2 bg-gray-50 px-4 py-2 rounded-full border">
                   <Calendar size={14} className="text-gray-400" />
@@ -2120,14 +2142,32 @@ export default function App() {
                   )}
                 </div>
               </div>
-              {transForm.type === 'transferencia' && (
-                <div>
-                  <label className="text-[10px] font-bold text-gray-400 uppercase ml-1">Cuenta Destino</label>
-                  <select className="w-full bg-gray-50 p-3 rounded-xl text-sm mt-1" value={transForm.toAccount} onChange={e => setTransForm({ ...transForm, toAccount: e.target.value })}>
-                    {accountsList.filter(a => a.name !== transForm.account).map(a => <option key={a.id} value={a.name}>{a.name}</option>)}
-                  </select>
-                </div>
-              )}
+              {transForm.type === 'transferencia' && (() => {
+                const isCreditPayment = accountsList.find(a => a.name === transForm.toAccount)?.type === 'credito';
+                const creditCards = accountsList.filter(a => a.type === 'credito' && a.name !== transForm.account);
+                const otherAccounts = accountsList.filter(a => a.type !== 'credito' && a.name !== transForm.account);
+                return (
+                  <div>
+                    <label className="text-[10px] font-bold text-gray-400 uppercase ml-1">
+                      {isCreditPayment ? '💳 Tarjeta a Pagar' : 'Cuenta Destino'}
+                    </label>
+                    <select className={`w-full p-3 rounded-xl text-sm mt-1 ${isCreditPayment ? 'bg-purple-50 border border-purple-200' : 'bg-gray-50'}`} value={transForm.toAccount} onChange={e => {
+                      const newCard = e.target.value;
+                      const isNewCredit = accountsList.find(a => a.name === newCard)?.type === 'credito';
+                      setTransForm({ ...transForm, toAccount: newCard, description: isNewCredit ? `Pago ${newCard}` : transForm.description });
+                    }}>
+                      {isCreditPayment ? (
+                        <>
+                          {creditCards.map(a => <option key={a.id} value={a.name}>💳 {a.name}</option>)}
+                          {otherAccounts.length > 0 && <optgroup label="Otras cuentas">{otherAccounts.map(a => <option key={a.id} value={a.name}>{a.name}</option>)}</optgroup>}
+                        </>
+                      ) : (
+                        accountsList.filter(a => a.name !== transForm.account).map(a => <option key={a.id} value={a.name}>{a.type === 'credito' ? `💳 ${a.name}` : a.name}</option>)
+                      )}
+                    </select>
+                  </div>
+                );
+              })()}
               {transForm.category === 'Pago de deuda' && transForm.type === 'gasto' && (
                 <div>
                   <label className="text-[10px] font-bold text-gray-400 uppercase ml-1">¿A cuál deuda aplicar?</label>
