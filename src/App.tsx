@@ -2174,7 +2174,7 @@ export default function App() {
       {/* ── MODAL CUENTA ─────────────────────────────── */}
       {showAccountModal && (
         <div className="fixed inset-0 z-[70] flex items-end sm:items-center justify-center sm:p-4 bg-black/60 backdrop-blur-sm" onClick={() => setShowAccountModal(false)}>
-          <div className="bg-white rounded-t-[2rem] sm:rounded-[2rem] p-6 w-full sm:max-w-sm" onClick={e => e.stopPropagation()}>
+          <div className="bg-white rounded-t-[2rem] sm:rounded-[2rem] p-6 w-full sm:max-w-sm max-h-[92vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
             <div className="flex justify-between items-center mb-5"><h3 className="text-xl font-bold">{accForm.id ? 'Editar' : 'Nueva'} Cuenta</h3><button onClick={() => setShowAccountModal(false)} className="p-2 bg-gray-100 rounded-full"><X size={18} /></button></div>
             <form onSubmit={handleSaveAccount} className="space-y-4">
               {!accForm.id && <p className="text-[11px] text-gray-400 bg-gray-50 p-3 rounded-xl">ℹ️ <strong>Carga manual:</strong> FinanzasApp no se conecta a tu banco. Ingresá el saldo actual y registrá tus movimientos a mano o por WhatsApp.</p>}
