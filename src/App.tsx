@@ -7,7 +7,7 @@ import { UpgradeModal } from './UpgradeModal';
 import {
   Plus, Wallet, TrendingUp, PieChart, LayoutDashboard, X,
   ArrowLeft, Settings, HelpCircle, User, Calculator, ArrowDownLeft,
-  ArrowUpRight, Pencil, Search,
+  ArrowUpRight, Pencil, Search, Users,
   ChevronLeft, ChevronRight, ShoppingBag, Car, Home, Zap, Coffee,
   Smartphone, Gift, Lock, Flame, CheckCircle2, ArrowRightLeft,
   Calendar, Percent, BarChart3, Trash2, LogOut,
@@ -54,6 +54,17 @@ interface AccountItem {
 interface Budget {
   category: string;
   limit: number;
+}
+
+interface Debt {
+  id: string;
+  person: string;
+  concept: string;
+  originalAmount: number;
+  remainingAmount: number;
+  type: 'me_deben' | 'les_debo';
+  date: string;
+  currency: Currency;
 }
 
 interface DolarRates {
@@ -134,7 +145,7 @@ const BANK_CONFIG: Record<string, { color: string, bg: string, label: string }> 
 };
 
 const CATEGORIES: Record<TransactionType, string[]> = {
-  gasto: ['Comida', 'Alquiler', 'Servicios', 'Ocio', 'Transporte', 'Suscripciones', 'Salud', 'Varios'],
+  gasto: ['Comida', 'Alquiler', 'Servicios', 'Ocio', 'Transporte', 'Suscripciones', 'Salud', 'Varios', 'Pago de deuda'],
   ingreso: ['Sueldo', 'Ventas', 'Intereses', 'Regalo'],
   transferencia: ['Ahorro', 'Pago Tarjeta', 'Movimiento']
 };
@@ -145,9 +156,18 @@ const CATEGORY_EMOJI: Record<string, string> = {
   'Comida': '🍔', 'Alquiler': '🏠', 'Servicios': '⚡', 'Ocio': '🛍️',
   'Transporte': '🚗', 'Suscripciones': '📱', 'Salud': '🏥', 'Varios': '📦',
   'Sueldo': '💼', 'Ventas': '💰', 'Intereses': '📈', 'Regalo': '🎁',
-  'Ahorro': '🔒', 'Movimiento': '↔️', 'Pago Tarjeta': '💳', 'Ajuste': '⚙️'
+  'Ahorro': '🔒', 'Movimiento': '↔️', 'Pago Tarjeta': '💳', 'Ajuste': '⚙️',
+  'Pago de deuda': '🤝',
 };
-const getCategoryEmoji = (category: string): string => CATEGORY_EMOJI[category] || '📋';
+const getCategoryEmoji = (category: string, overrides?: Record<string, string>): string =>
+  overrides?.[category] || CATEGORY_EMOJI[category] || '📋';
+
+// Emojis disponibles para picker
+const EMOJI_LIST = [
+  '🍔','🍕','☕','🍷','🎂','🏠','🚗','✈️','🚌','👗','💊','🏥','📚','🎮','⚡','📱',
+  '🎁','🛒','💼','📈','💵','💰','🔒','🤝','🏋️','🎵','⚽','🔧','🎓','💻','📷','🎸',
+  '🌍','👶','🐷','🎪','🛍️','🚀','🎬','🐾','⚙️','🌱','💡','🎯','🏆','❤️','⭐','🐶',
+];
 
 const PAYMENT_METHODS: { key: PaymentMethod, label: string, emoji: string }[] = [
   { key: 'debito', label: 'Débito', emoji: '💳' },
@@ -197,13 +217,18 @@ const INITIAL_ACCOUNTS: AccountItem[] = [
 ];
 
 const FAQS = [
-  { q: "¿Se conecta con mi banco?", a: "No. FinanzasApp no tiene integración con bancos ni acceso a tus cuentas. Todo se carga manualmente: vos ingresás tus movimientos a mano o mediante el bot de WhatsApp." },
-  { q: "¿Necesito dar mis datos reales?", a: "No. Solo necesitás un email y contraseña para registrarte. El nombre puede ser un apodo. No pedimos DNI, CUIL ni ningún dato de identidad." },
-  { q: "¿Los saldos son reales o estimados?", a: "Son los que vos cargás. La app calcula tu saldo sumando el balance inicial más los movimientos registrados. Si no cargás un gasto, no aparece." },
-  { q: "¿Cómo agrego un gasto recurrente?", a: "Activá 'Recurrente / Fijo' al crear un movimiento." },
-  { q: "¿Qué es 'Neto para Gastar'?", a: "Tu liquidez real (Bancos + Efectivo en ARS). No incluye ahorros ni inversiones." },
-  { q: "¿Cómo funcionan los presupuestos?", a: "Definís un límite por categoría. La barra se llena según lo que gastaste ese mes." },
-  { q: "¿De dónde sale la cotización del dólar?", a: "Se obtiene en tiempo real de dolarapi.com. Podés actualizarla manualmente con el botón ↺." },
+  { q: "¿Se conecta con mi banco?", a: "No. FinanzasApp no tiene integración con bancos ni acceso a tus cuentas. Todo se carga manualmente: vos ingresás tus movimientos a mano." },
+  { q: "¿Necesito dar mis datos reales?", a: "Solo necesitás un email y contraseña. El nombre puede ser un apodo. No pedimos DNI, CUIL ni ningún dato de identidad." },
+  { q: "¿Qué es 'Neto para Gastar'?", a: "Tu liquidez real: el total de tus cuentas bancarias y efectivo en ARS. No incluye ahorros, inversiones, ni deudas." },
+  { q: "¿Cómo ajusto el saldo de una cuenta?", a: "Entrá a Cuentas, tocá la cuenta, luego 'Editar / Ajustar Saldo'. Podés escribir el saldo actual y se recalcula automáticamente sin generar ningún movimiento." },
+  { q: "¿Cómo agrego una categoría propia?", a: "Al crear un movimiento, en el selector de Categoría elegí '＋ Agregar categoría...' y escribí el nombre. También podés asignarle un emoji." },
+  { q: "¿Qué son los Presupuestos?", a: "Definís un límite de gasto mensual por categoría. La barra se llena según lo gastado en el mes actual. Se configuran desde el Menú → Presupuestos." },
+  { q: "¿Cómo funciona la sección Deudas?", a: "Registrás lo que te deben (activos) y lo que debés (pasivos). Podés registrar pagos parciales o totales, que se aplican como transacción en la cuenta elegida y descuentan del pendiente." },
+  { q: "¿Puedo pagar una deuda desde un movimiento?", a: "Sí. Al crear un gasto, elegí la categoría 'Pago de deuda' y seleccioná la deuda. Al guardar, el monto se descuenta automáticamente del pendiente." },
+  { q: "¿Cómo funciona el bloqueo automático?", a: "La app se bloquea sola a los 3 minutos de inactividad y también si la mandás al fondo más de 30 segundos. Para desbloquear usás Face ID, Touch ID, o tu contraseña." },
+  { q: "¿Cómo exporto mis movimientos a Excel?", a: "En la pestaña Actividad, tocá el botón 📥 Excel (arriba a la derecha). Se descarga un archivo .xlsx con todos los movimientos filtrados." },
+  { q: "¿De dónde sale la cotización del dólar?", a: "Se obtiene en tiempo real de dolarapi.com (dólar blue, oficial y MEP). Podés actualizarla manualmente con el botón ↺ en el Dashboard." },
+  { q: "¿Los datos son privados?", a: "Sí. Cada usuario solo ve sus propios datos. Usamos Supabase con Row Level Security: es imposible que un usuario acceda a los datos de otro." },
 ];
 
 const CATEGORY_ICONS: Record<string, any> = {
@@ -620,7 +645,29 @@ const ProfileView = ({ user, onUpdate, onBack }: { user: any, onUpdate: (data: a
     setPass({ current: '', new: '', confirm: '' });
     setSaved(true); setTimeout(() => setSaved(false), 2000);
   };
-  const handlePhoto = (e: React.ChangeEvent<HTMLInputElement>) => { if (e.target.files?.[0]) onUpdate({ avatar: URL.createObjectURL(e.target.files[0]) }); };
+  const handlePhoto = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      const img = new Image();
+      img.onload = () => {
+        const canvas = document.createElement('canvas');
+        const size = 256;
+        canvas.width = size; canvas.height = size;
+        const ctx = canvas.getContext('2d')!;
+        // Crop cuadrado desde el centro
+        const min = Math.min(img.width, img.height);
+        const sx = (img.width - min) / 2;
+        const sy = (img.height - min) / 2;
+        ctx.drawImage(img, sx, sy, min, min, 0, 0, size, size);
+        const base64 = canvas.toDataURL('image/jpeg', 0.85);
+        onUpdate({ avatar: base64 });
+      };
+      img.src = ev.target?.result as string;
+    };
+    reader.readAsDataURL(file);
+  };
   return (
     <div className="space-y-6 animate-in fade-in">
       <div className="flex items-center gap-3"><button onClick={onBack} className="p-2 bg-white rounded-full shadow-sm"><ArrowLeft size={20} /></button><h2 className="text-2xl font-bold">Mi Perfil</h2></div>
@@ -652,13 +699,349 @@ const ProfileView = ({ user, onUpdate, onBack }: { user: any, onUpdate: (data: a
 
 // --- AYUDA ---
 
-const HelpView = ({ onBack }: { onBack: () => void }) => (
-  <div className="space-y-6 animate-in fade-in">
-    <div className="flex items-center gap-3"><button onClick={onBack} className="p-2 bg-white rounded-full shadow-sm"><ArrowLeft size={20} /></button><h2 className="text-2xl font-bold">Ayuda</h2></div>
-    <div className="bg-white p-6 rounded-[2rem] shadow-sm space-y-4"><h3 className="font-bold text-lg">Preguntas Frecuentes</h3>{FAQS.map((f, i) => <div key={i} className="border-b pb-3 last:border-0"><p className="font-bold text-sm">{f.q}</p><p className="text-sm text-gray-500 mt-1">{f.a}</p></div>)}</div>
-    <div className="bg-white p-6 rounded-[2rem] shadow-sm"><h3 className="font-bold text-lg mb-4">Contacto</h3><form onSubmit={e => { e.preventDefault(); alert("Enviado"); }} className="space-y-4"><input placeholder="Asunto" className="w-full bg-gray-50 p-3 rounded-xl outline-none" /><textarea placeholder="Mensaje" className="w-full bg-gray-50 p-3 rounded-xl h-24 outline-none" /><button className="w-full bg-indigo-600 text-white font-bold py-3 rounded-xl flex items-center justify-center gap-2"><Send size={18} /> Enviar</button></form></div>
-  </div>
-);
+const HelpView = ({ onBack }: { onBack: () => void }) => {
+  const [asunto, setAsunto] = useState('');
+  const [mensaje, setMensaje] = useState('');
+  const [sent, setSent] = useState(false);
+  const [openFaq, setOpenFaq] = useState<number | null>(null);
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!asunto.trim() || !mensaje.trim()) return;
+    const sub = encodeURIComponent(`[FinanzasApp] ${asunto}`);
+    const bod = encodeURIComponent(mensaje);
+    window.open(`mailto:martinmolina022@gmail.com?subject=${sub}&body=${bod}`);
+    setSent(true);
+    setAsunto(''); setMensaje('');
+    setTimeout(() => setSent(false), 4000);
+  };
+
+  return (
+    <div className="space-y-6 animate-in fade-in">
+      <div className="flex items-center gap-3"><button onClick={onBack} className="p-2 bg-white rounded-full shadow-sm"><ArrowLeft size={20} /></button><h2 className="text-2xl font-bold">Ayuda</h2></div>
+
+      {/* FAQs con acordeón */}
+      <div className="bg-white p-6 rounded-[2rem] shadow-sm space-y-1">
+        <h3 className="font-bold text-lg mb-4">Preguntas Frecuentes</h3>
+        {FAQS.map((f, i) => (
+          <div key={i} className="border-b last:border-0">
+            <button className="w-full text-left py-3 flex justify-between items-center gap-2" onClick={() => setOpenFaq(openFaq === i ? null : i)}>
+              <span className="font-bold text-sm">{f.q}</span>
+              <span className="text-gray-400 flex-shrink-0 text-lg">{openFaq === i ? '−' : '+'}</span>
+            </button>
+            {openFaq === i && <p className="text-sm text-gray-500 pb-3">{f.a}</p>}
+          </div>
+        ))}
+      </div>
+
+      {/* Contacto */}
+      <div className="bg-white p-6 rounded-[2rem] shadow-sm">
+        <h3 className="font-bold text-lg mb-1">Contacto</h3>
+        <p className="text-xs text-gray-400 mb-4">¿Tenés una duda, sugerencia o encontraste un error? Escribinos.</p>
+        {sent ? (
+          <div className="bg-green-50 rounded-2xl p-5 text-center space-y-1">
+            <p className="text-2xl">✅</p>
+            <p className="font-bold text-green-700">¡Mensaje enviado!</p>
+            <p className="text-sm text-green-600">Se abrió tu cliente de correo. Gracias por escribirnos.</p>
+          </div>
+        ) : (
+          <form onSubmit={handleSubmit} className="space-y-3">
+            <div><label className="text-[10px] font-bold text-gray-400 uppercase ml-1">Asunto</label><input value={asunto} onChange={e => setAsunto(e.target.value)} placeholder="Ej: Sugerencia, Bug, Consulta..." className="w-full bg-gray-50 p-3 rounded-xl outline-none border mt-1" /></div>
+            <div><label className="text-[10px] font-bold text-gray-400 uppercase ml-1">Mensaje</label><textarea value={mensaje} onChange={e => setMensaje(e.target.value)} placeholder="Escribí tu mensaje acá..." className="w-full bg-gray-50 p-3 rounded-xl h-28 outline-none border mt-1 resize-none" /></div>
+            <button type="submit" disabled={!asunto.trim() || !mensaje.trim()} className="w-full bg-indigo-600 text-white font-bold py-3 rounded-2xl flex items-center justify-center gap-2 disabled:opacity-50"><Send size={18} /> Enviar</button>
+          </form>
+        )}
+      </div>
+    </div>
+  );
+};
+
+// ============================================================
+// DEUDAS
+// ============================================================
+
+const DebtCard = ({ debt, onPay, onEdit, onDelete, confirmDeleteId, onConfirmDelete, onCancelDelete }: {
+  debt: Debt; onPay: (d: Debt) => void; onEdit: (d: Debt) => void; onDelete: (id: string) => void;
+  confirmDeleteId: string | null; onConfirmDelete: (id: string) => void; onCancelDelete: () => void;
+}) => {
+  const pct = debt.originalAmount > 0 ? Math.max(0, Math.min(100, ((debt.originalAmount - debt.remainingAmount) / debt.originalAmount) * 100)) : 0;
+  const isPaid = debt.remainingAmount <= 0;
+  return (
+    <div className={`bg-white rounded-2xl p-4 shadow-sm border ${isPaid ? 'border-green-200 opacity-60' : 'border-gray-100'}`}>
+      <div className="flex items-start justify-between mb-2">
+        <div className="flex-1">
+          <div className="flex items-center gap-2 flex-wrap">
+            <p className="font-bold">{debt.person}</p>
+            {isPaid && <span className="text-[10px] bg-green-100 text-green-700 font-bold px-2 py-0.5 rounded-full">✓ Saldado</span>}
+          </div>
+          {debt.concept && <p className="text-xs text-gray-500 mt-0.5">{debt.concept}</p>}
+          <p className="text-xs text-gray-400 mt-0.5">{debt.date}</p>
+        </div>
+        <div className="text-right ml-3">
+          <p className="font-bold text-base">{debt.currency === 'USD' ? 'u$s' : '$'} {fmtARS(debt.remainingAmount)}</p>
+          {debt.remainingAmount !== debt.originalAmount && <p className="text-[10px] text-gray-400">de {debt.currency === 'USD' ? 'u$s' : '$'} {fmtARS(debt.originalAmount)}</p>}
+        </div>
+      </div>
+      {!isPaid && debt.remainingAmount < debt.originalAmount && (
+        <div className="w-full bg-gray-100 rounded-full h-1.5 mb-3">
+          <div className="bg-green-500 h-1.5 rounded-full transition-all" style={{ width: `${pct}%` }} />
+        </div>
+      )}
+      {confirmDeleteId === debt.id ? (
+        <div className="flex gap-2 mt-2">
+          <button onClick={onCancelDelete} className="flex-1 py-2 bg-gray-100 rounded-xl text-sm font-bold">Cancelar</button>
+          <button onClick={() => onConfirmDelete(debt.id)} className="flex-1 py-2 bg-red-500 text-white rounded-xl text-sm font-bold">Sí, eliminar</button>
+        </div>
+      ) : (
+        <div className="flex gap-2 mt-2">
+          {!isPaid && <button onClick={() => onPay(debt)} className={`flex-1 py-2 text-xs font-bold rounded-xl ${debt.type === 'me_deben' ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-700'}`}>{debt.type === 'me_deben' ? '💰 Cobrar' : '💸 Pagar'}</button>}
+          <button onClick={() => onEdit(debt)} className="px-3 py-2 bg-gray-100 rounded-xl"><Pencil size={14} /></button>
+          <button onClick={() => onDelete(debt.id)} className="px-3 py-2 bg-gray-100 rounded-xl text-red-500"><Trash2 size={14} /></button>
+        </div>
+      )}
+    </div>
+  );
+};
+
+const DebtView = ({ debts, accounts, onAdd, onEdit, onDelete, onPay, onBack, dolarRates }: {
+  debts: Debt[]; accounts: AccountItem[];
+  onAdd: (d: Omit<Debt, 'id'>) => Promise<void>;
+  onEdit: (d: Debt) => Promise<void>;
+  onDelete: (id: string) => Promise<void>;
+  onPay: (debtId: string, debtAmountReduced: number, accountName: string, txAmount: number) => Promise<void>;
+  onBack: () => void;
+  dolarRates: DolarRates | null;
+}) => {
+  const emptyForm = { person: '', concept: '', amount: '', type: 'me_deben' as 'me_deben' | 'les_debo', date: new Date().toISOString().split('T')[0], currency: 'ARS' as Currency };
+  const [showForm, setShowForm] = useState(false);
+  const [editingDebt, setEditingDebt] = useState<Debt | null>(null);
+  const [payingDebt, setPayingDebt] = useState<Debt | null>(null);
+  const [form, setForm] = useState(emptyForm);
+  const [payAmount, setPayAmount] = useState('');
+  const [payArsAmount, setPayArsAmount] = useState('');
+  const [payAccount, setPayAccount] = useState(accounts[0]?.name || '');
+  const [confirmDeleteDebtId, setConfirmDeleteDebtId] = useState<string | null>(null);
+
+  const meDeben = debts.filter(d => d.type === 'me_deben' && d.remainingAmount > 0);
+  const lesDebo = debts.filter(d => d.type === 'les_debo' && d.remainingAmount > 0);
+  const saldados = debts.filter(d => d.remainingAmount <= 0);
+  const totalMeDeben = meDeben.reduce((s, d) => s + (d.currency === 'ARS' ? d.remainingAmount : 0), 0);
+  const totalLesDebo = lesDebo.reduce((s, d) => s + (d.currency === 'ARS' ? d.remainingAmount : 0), 0);
+  const totalMeDebenUSD = meDeben.reduce((s, d) => s + (d.currency === 'USD' ? d.remainingAmount : 0), 0);
+  const totalLesDeboUSD = lesDebo.reduce((s, d) => s + (d.currency === 'USD' ? d.remainingAmount : 0), 0);
+
+  const openAdd = (type: 'me_deben' | 'les_debo' = 'me_deben') => {
+    setEditingDebt(null);
+    setForm({ ...emptyForm, type });
+    setShowForm(true);
+  };
+
+  const openEdit = (d: Debt) => {
+    setEditingDebt(d);
+    setForm({ person: d.person, concept: d.concept, amount: fmtARS(d.remainingAmount), type: d.type, date: d.date, currency: d.currency });
+    setShowForm(true);
+  };
+
+  const saveForm = async () => {
+    if (!form.person.trim() || !form.amount) return;
+    const amount = parseInput(form.amount);
+    if (editingDebt) {
+      await onEdit({ ...editingDebt, person: form.person, concept: form.concept, remainingAmount: amount, date: form.date, currency: form.currency, type: form.type });
+    } else {
+      await onAdd({ person: form.person, concept: form.concept, originalAmount: amount, remainingAmount: amount, type: form.type, date: form.date, currency: form.currency });
+    }
+    setShowForm(false);
+  };
+
+  const openPay = (d: Debt) => {
+    setPayingDebt(d);
+    setPayAmount('');
+    setPayArsAmount('');
+    // Si la deuda es USD, sugerir una cuenta USD primero; si no hay, usar la primera
+    const suggestedAccount = d.currency === 'USD'
+      ? (accounts.find(a => a.currency === 'USD')?.name || accounts[0]?.name || '')
+      : (accounts[0]?.name || '');
+    setPayAccount(suggestedAccount);
+  };
+
+  const selectedPayAccountCurrency = accounts.find(a => a.name === payAccount)?.currency ?? 'ARS';
+  const isUSDDebt = payingDebt?.currency === 'USD';
+  const needsConversion = isUSDDebt && selectedPayAccountCurrency === 'ARS';
+  const blueRate = dolarRates?.blue ?? 0;
+
+  const savePay = async () => {
+    if (!payingDebt || !payAmount) return;
+    const debtAmountReduced = parseInput(payAmount); // en la moneda de la deuda
+    let txAmount: number;
+    if (needsConversion) {
+      // Depositar equivalente en ARS al blue
+      txAmount = payArsAmount ? parseInput(payArsAmount) : Math.round(debtAmountReduced * blueRate);
+    } else {
+      txAmount = debtAmountReduced;
+    }
+    await onPay(payingDebt.id, debtAmountReduced, payAccount, txAmount);
+    setPayingDebt(null);
+  };
+
+  return (
+    <div className="space-y-5 animate-in fade-in">
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-3"><button onClick={onBack} className="p-2 bg-white rounded-full shadow-sm"><ArrowLeft size={20} /></button><h2 className="text-2xl font-bold">Deudas</h2></div>
+      </div>
+
+      {/* Resumen */}
+      <div className="grid grid-cols-2 gap-3">
+        <div className="bg-green-50 rounded-2xl p-4 cursor-pointer" onClick={() => openAdd('me_deben')}>
+          <p className="text-xs font-bold text-green-600 uppercase">📥 Me deben</p>
+          {totalMeDeben > 0 && <p className="text-xl font-bold text-green-700 mt-1">$ {fmtARS(totalMeDeben)}</p>}
+          {totalMeDebenUSD > 0 && <p className={`font-bold text-green-600 ${totalMeDeben > 0 ? 'text-sm' : 'text-xl mt-1'}`}>u$s {fmtARS(totalMeDebenUSD)}</p>}
+          {totalMeDeben === 0 && totalMeDebenUSD === 0 && <p className="text-xl font-bold text-green-700 mt-1">$ 0</p>}
+          <p className="text-xs text-green-500 mt-0.5">{meDeben.length} activa{meDeben.length !== 1 ? 's' : ''} · + Agregar</p>
+        </div>
+        <div className="bg-red-50 rounded-2xl p-4 cursor-pointer" onClick={() => openAdd('les_debo')}>
+          <p className="text-xs font-bold text-red-600 uppercase">📤 Les debo</p>
+          {totalLesDebo > 0 && <p className="text-xl font-bold text-red-700 mt-1">$ {fmtARS(totalLesDebo)}</p>}
+          {totalLesDeboUSD > 0 && <p className={`font-bold text-red-600 ${totalLesDebo > 0 ? 'text-sm' : 'text-xl mt-1'}`}>u$s {fmtARS(totalLesDeboUSD)}</p>}
+          {totalLesDebo === 0 && totalLesDeboUSD === 0 && <p className="text-xl font-bold text-red-700 mt-1">$ 0</p>}
+          <p className="text-xs text-red-500 mt-0.5">{lesDebo.length} activa{lesDebo.length !== 1 ? 's' : ''} · + Agregar</p>
+        </div>
+      </div>
+
+      {(totalMeDeben > 0 || totalLesDebo > 0 || totalMeDebenUSD > 0 || totalLesDeboUSD > 0) && (
+        <div className="rounded-2xl p-4 bg-blue-50 space-y-1">
+          <p className="text-xs font-bold text-gray-500 uppercase mb-2">Neto</p>
+          {(totalMeDeben > 0 || totalLesDebo > 0) && (
+            <div className="flex items-baseline gap-1.5">
+              <span className={`text-xl font-bold ${totalMeDeben >= totalLesDebo ? 'text-blue-700' : 'text-orange-700'}`}>
+                {totalMeDeben >= totalLesDebo ? '+' : '-'} $ {fmtARS(Math.abs(totalMeDeben - totalLesDebo))}
+              </span>
+              <span className="text-xs text-gray-400">ARS</span>
+            </div>
+          )}
+          {(totalMeDebenUSD > 0 || totalLesDeboUSD > 0) && (
+            <div className="flex items-baseline gap-1.5">
+              <span className={`text-xl font-bold ${totalMeDebenUSD >= totalLesDeboUSD ? 'text-blue-700' : 'text-orange-700'}`}>
+                {totalMeDebenUSD >= totalLesDeboUSD ? '+' : '-'} u$s {fmtARS(Math.abs(totalMeDebenUSD - totalLesDeboUSD))}
+              </span>
+              <span className="text-xs text-gray-400">USD</span>
+            </div>
+          )}
+          <p className="text-xs text-gray-400 pt-1">
+            {(totalMeDeben + totalMeDebenUSD) >= (totalLesDebo + totalLesDeboUSD) ? 'Te deben más de lo que debés' : 'Debés más de lo que te deben'}
+          </p>
+        </div>
+      )}
+
+      {meDeben.length > 0 && (<div><p className="text-xs font-bold text-gray-400 uppercase ml-1 mb-2">📥 Me deben</p><div className="space-y-2">{meDeben.map(d => <DebtCard key={d.id} debt={d} onPay={openPay} onEdit={openEdit} onDelete={id => setConfirmDeleteDebtId(id)} confirmDeleteId={confirmDeleteDebtId} onConfirmDelete={async id => { await onDelete(id); setConfirmDeleteDebtId(null); }} onCancelDelete={() => setConfirmDeleteDebtId(null)} />)}</div></div>)}
+      {lesDebo.length > 0 && (<div><p className="text-xs font-bold text-gray-400 uppercase ml-1 mb-2">📤 Les debo</p><div className="space-y-2">{lesDebo.map(d => <DebtCard key={d.id} debt={d} onPay={openPay} onEdit={openEdit} onDelete={id => setConfirmDeleteDebtId(id)} confirmDeleteId={confirmDeleteDebtId} onConfirmDelete={async id => { await onDelete(id); setConfirmDeleteDebtId(null); }} onCancelDelete={() => setConfirmDeleteDebtId(null)} />)}</div></div>)}
+      {saldados.length > 0 && (<div><p className="text-xs font-bold text-gray-400 uppercase ml-1 mb-2">✓ Saldados</p><div className="space-y-2">{saldados.map(d => <DebtCard key={d.id} debt={d} onPay={openPay} onEdit={openEdit} onDelete={id => setConfirmDeleteDebtId(id)} confirmDeleteId={confirmDeleteDebtId} onConfirmDelete={async id => { await onDelete(id); setConfirmDeleteDebtId(null); }} onCancelDelete={() => setConfirmDeleteDebtId(null)} />)}</div></div>)}
+
+      {debts.length === 0 && (
+        <div className="text-center py-12 space-y-3"><div className="text-5xl">🤝</div><p className="font-bold text-gray-500">Sin deudas registradas</p><p className="text-sm text-gray-400">Tocá "Me deben" o "Les debo" para agregar</p></div>
+      )}
+
+      {/* Modal alta/edición */}
+      {showForm && (
+        <div className="fixed inset-0 z-[70] flex items-end sm:items-center justify-center sm:p-4 bg-black/50 backdrop-blur-sm" onClick={() => setShowForm(false)}>
+          <div className="bg-white rounded-t-3xl sm:rounded-3xl p-6 w-full sm:max-w-sm space-y-4" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between"><h3 className="text-xl font-bold">{editingDebt ? 'Editar deuda' : 'Nueva deuda'}</h3><button onClick={() => setShowForm(false)} className="p-2 bg-gray-100 rounded-full"><X size={18} /></button></div>
+            <div className="flex bg-gray-100 p-1 rounded-xl">
+              <button type="button" onClick={() => setForm({ ...form, type: 'me_deben' })} className={`flex-1 py-2 text-xs font-bold rounded-lg transition-all ${form.type === 'me_deben' ? 'bg-white shadow text-green-700' : 'text-gray-500'}`}>📥 Me deben</button>
+              <button type="button" onClick={() => setForm({ ...form, type: 'les_debo' })} className={`flex-1 py-2 text-xs font-bold rounded-lg transition-all ${form.type === 'les_debo' ? 'bg-white shadow text-red-700' : 'text-gray-500'}`}>📤 Les debo</button>
+            </div>
+            <input placeholder="Persona (ej: Agustín)" value={form.person} onChange={e => setForm({ ...form, person: e.target.value })} className="w-full bg-gray-50 p-3 rounded-xl outline-none border" />
+            <input placeholder="Concepto (ej: Préstamo auto, viaje)" value={form.concept} onChange={e => setForm({ ...form, concept: e.target.value })} className="w-full bg-gray-50 p-3 rounded-xl outline-none border" />
+            <input type="text" inputMode="decimal" placeholder="Monto" value={form.amount} onChange={e => setForm({ ...form, amount: formatInput(e.target.value) })} className="w-full bg-gray-50 p-3 rounded-xl outline-none border" />
+            <div className="flex gap-2">
+              <div className="flex bg-gray-100 p-1 rounded-xl flex-1">{(['ARS', 'USD'] as Currency[]).map(c => <button key={c} type="button" onClick={() => setForm({ ...form, currency: c })} className={`flex-1 py-1.5 text-xs font-bold rounded-lg transition-all ${form.currency === c ? 'bg-white shadow' : ''}`}>{c === 'ARS' ? '🇦🇷 ARS' : '🇺🇸 USD'}</button>)}</div>
+              <input type="date" value={form.date} onChange={e => setForm({ ...form, date: e.target.value })} className="flex-1 bg-gray-50 p-2 rounded-xl outline-none border text-sm" />
+            </div>
+            <button onClick={saveForm} className="w-full bg-black text-white font-bold py-3 rounded-2xl">Guardar</button>
+          </div>
+        </div>
+      )}
+
+      {/* Modal pago/cobro */}
+      {payingDebt && (
+        <div className="fixed inset-0 z-[70] flex items-end sm:items-center justify-center sm:p-4 bg-black/50 backdrop-blur-sm" onClick={() => setPayingDebt(null)}>
+          <div className="bg-white rounded-t-3xl sm:rounded-3xl p-6 w-full sm:max-w-sm space-y-4" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between">
+              <h3 className="text-xl font-bold">{payingDebt.type === 'me_deben' ? '💰 Registrar cobro' : '💸 Registrar pago'}</h3>
+              <button onClick={() => setPayingDebt(null)} className="p-2 bg-gray-100 rounded-full"><X size={18} /></button>
+            </div>
+
+            <div className="bg-gray-50 rounded-2xl p-3">
+              <p className="font-bold">{payingDebt.person}</p>
+              {payingDebt.concept && <p className="text-sm text-gray-500">{payingDebt.concept}</p>}
+              <p className="text-sm text-gray-400 mt-1">
+                Pendiente: <span className="font-bold text-black">{payingDebt.currency === 'USD' ? 'u$s' : '$'} {fmtARS(payingDebt.remainingAmount)}</span>
+              </p>
+            </div>
+
+            {/* Monto en la moneda de la deuda */}
+            <div>
+              <label className="text-[10px] font-bold text-gray-400 uppercase ml-1">
+                Monto {payingDebt.type === 'me_deben' ? 'cobrado' : 'pagado'} {isUSDDebt ? '(USD)' : '(ARS)'}
+              </label>
+              <div className="flex items-center gap-2 mt-1">
+                <span className="text-gray-400 font-bold pl-1">{isUSDDebt ? 'u$s' : '$'}</span>
+                <input type="text" inputMode="decimal" placeholder="0" value={payAmount}
+                  onChange={e => {
+                    setPayAmount(formatInput(e.target.value));
+                    if (needsConversion && blueRate > 0) {
+                      setPayArsAmount(fmtARS(Math.round(parseInput(formatInput(e.target.value)) * blueRate)));
+                    }
+                  }}
+                  className="flex-1 bg-gray-50 p-3 rounded-xl outline-none border" />
+              </div>
+              <button type="button"
+                onClick={() => {
+                  setPayAmount(fmtARS(payingDebt.remainingAmount));
+                  if (needsConversion && blueRate > 0) setPayArsAmount(fmtARS(Math.round(payingDebt.remainingAmount * blueRate)));
+                }}
+                className="text-xs text-indigo-600 font-bold mt-1 ml-1">
+                {payingDebt.type === 'me_deben' ? 'Cobrar' : 'Pagar'} todo ({isUSDDebt ? 'u$s' : '$'} {fmtARS(payingDebt.remainingAmount)})
+              </button>
+            </div>
+
+            {/* Cuenta */}
+            <div>
+              <label className="text-[10px] font-bold text-gray-400 uppercase ml-1">{payingDebt.type === 'me_deben' ? 'Acreditar en' : 'Débitar de'}</label>
+              <select value={payAccount} onChange={e => {
+                setPayAccount(e.target.value);
+                const newCurrency = accounts.find(a => a.name === e.target.value)?.currency ?? 'ARS';
+                if (isUSDDebt && newCurrency === 'ARS' && payAmount && blueRate > 0) {
+                  setPayArsAmount(fmtARS(Math.round(parseInput(payAmount) * blueRate)));
+                }
+              }} className="w-full bg-gray-50 p-3 rounded-xl outline-none border mt-1 text-sm">
+                {accounts.map(a => <option key={a.id} value={a.name}>{a.name} {a.currency === 'USD' ? '🇺🇸' : '🇦🇷'}</option>)}
+              </select>
+            </div>
+
+            {/* Conversión ARS — solo cuando deuda USD y cuenta ARS */}
+            {needsConversion && (
+              <div className="bg-amber-50 border border-amber-200 rounded-2xl p-3 space-y-2">
+                <p className="text-xs font-bold text-amber-700">💱 Convertir a pesos (cuenta ARS)</p>
+                <p className="text-[11px] text-amber-600">Blue: ${fmtARS(blueRate)} · Sugerido: ${payAmount ? fmtARS(Math.round(parseInput(payAmount) * blueRate)) : '0'}</p>
+                <div className="flex items-center gap-2">
+                  <span className="text-gray-500 font-bold text-sm">$</span>
+                  <input type="text" inputMode="decimal" placeholder="Monto en ARS" value={payArsAmount}
+                    onChange={e => setPayArsAmount(formatInput(e.target.value))}
+                    className="flex-1 bg-white p-2.5 rounded-xl outline-none border border-amber-200 text-sm" />
+                </div>
+              </div>
+            )}
+
+            <button onClick={savePay} disabled={!payAmount || !payAccount || (needsConversion && !payArsAmount)}
+              className="w-full bg-black text-white font-bold py-3 rounded-2xl disabled:opacity-50">
+              {payingDebt.type === 'me_deben' ? 'Registrar cobro' : 'Registrar pago'}
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
 
 // ============================================================
 // PANTALLA DE BLOQUEO
@@ -774,6 +1157,7 @@ export default function App() {
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [accountsList, setAccountsList] = useState<AccountItem[]>([]);
   const [budgets, setBudgets] = useState<Budget[]>([]);
+  const [debts, setDebts] = useState<Debt[]>([]);
   const [activeTab, setActiveTab] = useState('dashboard');
   const [showMenu, setShowMenu] = useState(false);
   const [showTransactionModal, setShowTransactionModal] = useState(false);
@@ -803,31 +1187,38 @@ export default function App() {
   const [dolarLoading, setDolarLoading] = useState(false);
   const [activityFilter, setActivityFilter] = useState({ search: '' });
 
-  const [accForm, setAccForm] = useState({ id: '', name: '', provider: 'Default', balance: '', type: 'gastos' as AccountType, limit: '', currency: 'ARS' as Currency });
+  const [accForm, setAccForm] = useState({ id: '', name: '', provider: 'Default', balance: '', type: 'gastos' as AccountType, limit: '', currency: 'ARS' as Currency, emoji: '' });
   const [transForm, setTransForm] = useState({
     id: '', amount: '', description: '', type: 'gasto' as TransactionType,
     category: 'Comida', account: '', toAccount: '', method: 'debito' as PaymentMethod,
-    date: '', isRecurring: false, incomeType: 'fijo' as IncomeType
+    date: '', isRecurring: false, incomeType: 'fijo' as IncomeType, debtPaymentId: ''
   });
   const [customCategories, setCustomCategories] = useState<Record<string, string[]>>(() => {
     try { return JSON.parse(localStorage.getItem('customCategories') || '{}'); } catch { return {}; }
   });
+  const [customCategoryEmojis, setCustomCategoryEmojis] = useState<Record<string, string>>(() => {
+    try { return JSON.parse(localStorage.getItem('customCategoryEmojis') || '{}'); } catch { return {}; }
+  });
+  const [customAccountEmojis, setCustomAccountEmojis] = useState<Record<string, string>>(() => {
+    try { return JSON.parse(localStorage.getItem('customAccountEmojis') || '{}'); } catch { return {}; }
+  });
   const [addingCategory, setAddingCategory] = useState(false);
   const [newCategoryInput, setNewCategoryInput] = useState('');
+  const [newCategoryEmoji, setNewCategoryEmoji] = useState('📋');
 
   // Auth listener
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
       if (session?.user) {
         const u = session.user;
-        setCurrentUser({ id: u.id, name: u.user_metadata?.name || u.email?.split('@')[0] || 'Usuario', email: u.email || '', avatar: `https://api.dicebear.com/7.x/avataaars/svg?seed=${u.email}` });
+        setCurrentUser({ id: u.id, name: u.user_metadata?.name || u.email?.split('@')[0] || 'Usuario', email: u.email || '', avatar: u.user_metadata?.avatar_url || `https://api.dicebear.com/7.x/avataaars/svg?seed=${u.email}` });
       }
       setAuthLoading(false);
     });
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
       if (session?.user) {
         const u = session.user;
-        setCurrentUser({ id: u.id, name: u.user_metadata?.name || u.email?.split('@')[0] || 'Usuario', email: u.email || '', avatar: `https://api.dicebear.com/7.x/avataaars/svg?seed=${u.email}` });
+        setCurrentUser({ id: u.id, name: u.user_metadata?.name || u.email?.split('@')[0] || 'Usuario', email: u.email || '', avatar: u.user_metadata?.avatar_url || `https://api.dicebear.com/7.x/avataaars/svg?seed=${u.email}` });
       } else {
         setCurrentUser(null);
         setTransactions([]); setAccountsList([]); setBudgets([]);
@@ -887,19 +1278,29 @@ export default function App() {
   useEffect(() => {
     if (!currentUser?.id) return;
     const load = async () => {
-      const [{ data: txs }, { data: accs }, { data: buds }] = await Promise.all([
+      const [{ data: txs }, { data: accs }, { data: buds }, { data: dts }] = await Promise.all([
         supabase.from('transactions').select('*').eq('user_id', currentUser.id).order('date', { ascending: false }),
         supabase.from('accounts').select('*').eq('user_id', currentUser.id),
         supabase.from('budgets').select('*').eq('user_id', currentUser.id),
+        supabase.from('debts').select('*').eq('user_id', currentUser.id).order('date', { ascending: false }),
       ]);
       if (txs) setTransactions(txs.map((t: any) => ({ id: t.id, amount: t.amount, description: t.description, category: t.category, account: t.account, toAccount: t.to_account, method: t.method, type: t.type, incomeType: t.income_type, isRecurring: t.is_recurring, date: t.date })));
       if (accs) setAccountsList(accs.map((a: any) => ({ id: a.id, name: a.name, provider: a.provider, initialBalance: a.initial_balance, limit: a.limit_amount, type: a.type, currency: a.currency })));
       if (buds) setBudgets(buds.map((b: any) => ({ category: b.category, limit: b.limit_amount })));
+      if (dts) setDebts(dts.map((d: any) => ({ id: d.id, person: d.person, concept: d.concept || '', originalAmount: d.original_amount, remainingAmount: d.remaining_amount, type: d.type, date: d.date, currency: d.currency })));
       // Cargar plan
       const { data: profile } = await supabase.from('profiles').select('no_ads, whatsapp_active, phone').eq('user_id', currentUser.id).single();
       if (profile) {
         setUserPlan({ noAds: profile.no_ads || false, whatsappActive: profile.whatsapp_active || false });
         if (profile.phone) setCurrentUser((u: any) => ({ ...u, phone: profile.phone }));
+      }
+      // Cargar customizaciones desde user_metadata (no requiere columnas extra en DB)
+      const { data: { user: authUser } } = await supabase.auth.getUser();
+      if (authUser?.user_metadata) {
+        const meta = authUser.user_metadata;
+        if (meta.custom_categories) { setCustomCategories(meta.custom_categories); localStorage.setItem('customCategories', JSON.stringify(meta.custom_categories)); }
+        if (meta.custom_category_emojis) { setCustomCategoryEmojis(meta.custom_category_emojis); localStorage.setItem('customCategoryEmojis', JSON.stringify(meta.custom_category_emojis)); }
+        if (meta.custom_account_emojis) { setCustomAccountEmojis(meta.custom_account_emojis); localStorage.setItem('customAccountEmojis', JSON.stringify(meta.custom_account_emojis)); }
       }
     };
     load();
@@ -1002,7 +1403,18 @@ export default function App() {
   const liquidBalance = accountBalances.filter(a => (a.type === 'gastos' || a.type === 'efectivo') && a.currency === 'ARS').reduce((s, a) => s + a.current, 0);
   const usdTotal = accountBalances.filter(a => a.currency === 'USD').reduce((s, a) => s + a.current, 0);
   const arsTotal = accountBalances.filter(a => a.currency === 'ARS').reduce((s, a) => s + a.current, 0);
-  const patrimonioTotal = arsTotal + (dolarRates?.blue ?? 0) * usdTotal;
+  const blueRate = dolarRates?.blue ?? 0;
+  const patrimonioTotal = arsTotal + blueRate * usdTotal;
+
+  // --- ACTIVOS / PASIVOS desglosados ---
+  const activosBancos = accountBalances.filter(a => (a.type === 'gastos' || a.type === 'efectivo') && a.currency === 'ARS').reduce((s, a) => s + Math.max(0, a.current), 0);
+  const activosAhorroARS = accountBalances.filter(a => a.type === 'ahorro' && a.currency === 'ARS').reduce((s, a) => s + Math.max(0, a.current), 0);
+  const activosUSD = accountBalances.filter(a => a.currency === 'USD').reduce((s, a) => s + Math.max(0, a.current), 0);
+  const totalActivos = activosBancos + activosAhorroARS + activosUSD * blueRate;
+  const pasivosTarjetas = accountBalances.filter(a => a.type === 'credito').reduce((s, a) => s + Math.abs(Math.min(0, a.current)), 0);
+  const pasivosDeudas = debts.filter(d => d.type === 'les_debo' && d.remainingAmount > 0).reduce((s, d) => s + (d.currency === 'ARS' ? d.remainingAmount : d.remainingAmount * blueRate), 0);
+  const totalPasivos = pasivosTarjetas + pasivosDeudas;
+  const patrimonioNeto = totalActivos - totalPasivos;
 
   const today = new Date();
   const currentMonthTxs = transactions.filter(t => { const [y, m] = t.date.split('-').map(Number); return y === today.getFullYear() && m === today.getMonth() + 1; });
@@ -1024,8 +1436,11 @@ export default function App() {
   const handleLogout = async () => { await supabase.auth.signOut(); setActiveTab('dashboard'); setShowMenu(false); };
   const handleUpdateProfile = async (data: any) => {
     setCurrentUser({ ...currentUser, ...data });
-    if (data.name || data.email) {
-      await supabase.auth.updateUser({ data: { name: data.name || currentUser.name } });
+    const metaUpdate: any = {};
+    if (data.name) metaUpdate.name = data.name;
+    if (data.avatar) metaUpdate.avatar_url = data.avatar;
+    if (Object.keys(metaUpdate).length) {
+      await supabase.auth.updateUser({ data: metaUpdate });
     }
   };
 
@@ -1043,6 +1458,15 @@ export default function App() {
       await supabase.from('transactions').insert(dbRow);
       setTransactions([tx, ...transactions]);
     }
+    // Si es pago de deuda, reducir el monto pendiente
+    if (transForm.category === 'Pago de deuda' && transForm.debtPaymentId) {
+      const debt = debts.find(d => d.id === transForm.debtPaymentId);
+      if (debt) {
+        const newRemaining = Math.max(0, debt.remainingAmount - tx.amount);
+        await supabase.from('debts').update({ remaining_amount: newRemaining }).eq('id', debt.id);
+        setDebts(prev => prev.map(d => d.id === debt.id ? { ...d, remainingAmount: newRemaining } : d));
+      }
+    }
     setShowTransactionModal(false);
   };
 
@@ -1059,7 +1483,10 @@ export default function App() {
     if (!accForm.id && accForm.balance === '') return alert('Ingresá un saldo inicial (puede ser 0)');
     if (accForm.id) {
       const old = accountBalances.find(a => a.id === accForm.id);
-      const newBal = parseInput(accForm.balance);
+      // For credit cards, user enters "disponible" — convert back to actual balance (negative)
+      const newBal = accForm.type === 'credito' && accForm.limit
+        ? parseInput(accForm.balance) - parseInput(accForm.limit)
+        : parseInput(accForm.balance);
       // Recalcular saldo_inicial para que el saldo_actual coincida con lo ingresado,
       // sin crear ninguna transacción de ajuste.
       // saldo_actual = saldo_inicial + ingresos - gastos - transferencias_salida + transferencias_entrada
@@ -1074,27 +1501,49 @@ export default function App() {
       }
       await supabase.from('accounts').update({ name: accForm.name, provider: accForm.provider, type: accForm.type, currency: accForm.currency, initial_balance: newInitialBalance, limit_amount: accForm.limit ? parseInput(accForm.limit) : null }).eq('id', accForm.id);
       setAccountsList(accountsList.map(a => a.id === accForm.id ? { ...a, name: accForm.name, provider: accForm.provider, type: accForm.type, currency: accForm.currency, initialBalance: newInitialBalance, limit: parseInput(accForm.limit) } : a));
+      // Guardar emoji personalizado en localStorage + Supabase
+      const updatedAccEmojis = { ...customAccountEmojis, [accForm.id]: accForm.emoji };
+      if (!accForm.emoji) delete updatedAccEmojis[accForm.id];
+      setCustomAccountEmojis(updatedAccEmojis);
+      localStorage.setItem('customAccountEmojis', JSON.stringify(updatedAccEmojis));
+      supabase.auth.updateUser({ data: { custom_account_emojis: updatedAccEmojis } });
     } else {
-      const newAcc = { ...accForm, id: Date.now().toString(), initialBalance: parseInput(accForm.balance), limit: accForm.limit ? parseInput(accForm.limit) : undefined };
+      const parsedInitialBal = accForm.type === 'credito' && accForm.limit
+        ? parseInput(accForm.balance) - parseInput(accForm.limit) // available → actual (negative)
+        : parseInput(accForm.balance);
+      const newAcc = { ...accForm, id: Date.now().toString(), initialBalance: parsedInitialBal, limit: accForm.limit ? parseInput(accForm.limit) : undefined };
       await supabase.from('accounts').insert({ id: newAcc.id, user_id: currentUser.id, name: newAcc.name, provider: newAcc.provider, initial_balance: newAcc.initialBalance, limit_amount: newAcc.limit || null, type: newAcc.type, currency: newAcc.currency });
       setAccountsList([...accountsList, newAcc]);
+      if (accForm.emoji) {
+        const updatedAccEmojis = { ...customAccountEmojis, [newAcc.id]: accForm.emoji };
+        setCustomAccountEmojis(updatedAccEmojis);
+        localStorage.setItem('customAccountEmojis', JSON.stringify(updatedAccEmojis));
+        supabase.auth.updateUser({ data: { custom_account_emojis: updatedAccEmojis } });
+      }
     }
     setShowAccountModal(false);
   };
 
-  const openTxModal = (tx?: Transaction, type: TransactionType = 'gasto', accountName?: string) => {
+  const openTxModal = (tx?: Transaction, type: TransactionType = 'gasto', accountName?: string, toAccountName?: string) => {
     if (tx) {
-      setTransForm({ id: tx.id, amount: fmtARS(tx.amount), description: tx.description, type: tx.type, category: tx.category, account: tx.account, toAccount: tx.toAccount || '', method: tx.method, date: tx.date, isRecurring: tx.isRecurring || false, incomeType: tx.incomeType || 'fijo' });
+      setTransForm({ id: tx.id, amount: fmtARS(tx.amount), description: tx.description, type: tx.type, category: tx.category, account: tx.account, toAccount: tx.toAccount || '', method: tx.method, date: tx.date, isRecurring: tx.isRecurring || false, incomeType: tx.incomeType || 'fijo', debtPaymentId: '' });
     } else {
       const def = accountName || accountsList[0]?.name || '';
-      setTransForm({ id: '', amount: '', description: '', type, category: CATEGORIES[type][0], account: def, toAccount: accountsList.find(a => a.name !== def)?.name || '', method: 'debito', date: new Date().toISOString().split('T')[0], isRecurring: false, incomeType: 'fijo' });
+      const toDefault = toAccountName || accountsList.find(a => a.name !== def)?.name || '';
+      setTransForm({ id: '', amount: '', description: '', type, category: CATEGORIES[type][0], account: def, toAccount: toDefault, method: 'debito', date: new Date().toISOString().split('T')[0], isRecurring: false, incomeType: 'fijo', debtPaymentId: '' });
     }
     setShowTransactionModal(true);
   };
 
   const openAccModal = (acc?: any) => {
-    if (acc) setAccForm({ id: acc.id, name: acc.name, provider: acc.provider, balance: fmtARS(acc.current), type: acc.type, limit: acc.limit ? fmtARS(acc.limit) : '', currency: acc.currency });
-    else setAccForm({ id: '', name: '', provider: 'Default', balance: '', type: 'gastos', limit: '', currency: 'ARS' });
+    if (acc) {
+      const displayBalance = acc.type === 'credito' && acc.limit != null
+        ? fmtARS(acc.limit + acc.current) // available = limit - debt (current is negative)
+        : fmtARS(acc.current);
+      setAccForm({ id: acc.id, name: acc.name, provider: acc.provider, balance: displayBalance, type: acc.type, limit: acc.limit ? fmtARS(acc.limit) : '', currency: acc.currency, emoji: customAccountEmojis[acc.id] || '' });
+    } else {
+      setAccForm({ id: '', name: '', provider: 'Default', balance: '', type: 'gastos', limit: '', currency: 'ARS', emoji: '' });
+    }
     setShowAccountModal(true);
   };
 
@@ -1103,15 +1552,59 @@ export default function App() {
     ...(customCategories[type] || []),
   ];
 
-  const addCustomCategory = (name: string, type: TransactionType) => {
+  const addCustomCategory = (name: string, type: TransactionType, emoji?: string) => {
     const trimmed = name.trim();
     if (!trimmed) return;
-    const updated = { ...customCategories, [type]: [...(customCategories[type] || []), trimmed] };
-    setCustomCategories(updated);
-    localStorage.setItem('customCategories', JSON.stringify(updated));
+    const updatedCats = { ...customCategories, [type]: [...(customCategories[type] || []), trimmed] };
+    setCustomCategories(updatedCats);
+    localStorage.setItem('customCategories', JSON.stringify(updatedCats));
+    let updatedEmojis = customCategoryEmojis;
+    if (emoji && emoji !== '📋') {
+      updatedEmojis = { ...customCategoryEmojis, [trimmed]: emoji };
+      setCustomCategoryEmojis(updatedEmojis);
+      localStorage.setItem('customCategoryEmojis', JSON.stringify(updatedEmojis));
+    }
+    // Persistir en Supabase Auth user_metadata
+    supabase.auth.updateUser({ data: { custom_categories: updatedCats, custom_category_emojis: updatedEmojis } });
     setTransForm(f => ({ ...f, category: trimmed }));
     setAddingCategory(false);
     setNewCategoryInput('');
+    setNewCategoryEmoji('📋');
+  };
+
+  // getCatEmoji: usa overrides del usuario + defaults
+  const getCatEmoji = (cat: string) => getCategoryEmoji(cat, customCategoryEmojis);
+
+  // --- HANDLERS DEUDAS ---
+
+  const handleSaveDebt = async (d: Omit<Debt, 'id'>) => {
+    const newDebt: Debt = { ...d, id: Date.now().toString() };
+    await supabase.from('debts').insert({ id: newDebt.id, user_id: currentUser.id, person: newDebt.person, concept: newDebt.concept, original_amount: newDebt.originalAmount, remaining_amount: newDebt.remainingAmount, type: newDebt.type, date: newDebt.date, currency: newDebt.currency });
+    setDebts(prev => [newDebt, ...prev]);
+  };
+
+  const handleEditDebt = async (d: Debt) => {
+    await supabase.from('debts').update({ person: d.person, concept: d.concept, remaining_amount: d.remainingAmount, type: d.type, date: d.date, currency: d.currency }).eq('id', d.id);
+    setDebts(prev => prev.map(x => x.id === d.id ? d : x));
+  };
+
+  const handleDeleteDebt = async (id: string) => {
+    await supabase.from('debts').delete().eq('id', id);
+    setDebts(prev => prev.filter(d => d.id !== id));
+  };
+
+  const handlePayDebt = async (debtId: string, debtAmountReduced: number, accountName: string, txAmount: number) => {
+    const debt = debts.find(d => d.id === debtId);
+    if (!debt) return;
+    const newRemaining = Math.max(0, debt.remainingAmount - debtAmountReduced);
+    const txType: TransactionType = debt.type === 'me_deben' ? 'ingreso' : 'gasto';
+    const desc = debt.type === 'me_deben' ? `Cobro: ${debt.person}` : `Pago: ${debt.person}`;
+    const fullDesc = debt.concept ? `${desc} · ${debt.concept}` : desc;
+    const tx: Transaction = { id: Date.now().toString(), amount: txAmount, description: fullDesc, category: debt.type === 'me_deben' ? 'Intereses' : 'Pago de deuda', account: accountName, method: 'transferencia', type: txType, date: new Date().toISOString().split('T')[0] };
+    await supabase.from('transactions').insert({ id: tx.id, user_id: currentUser.id, amount: tx.amount, description: tx.description, category: tx.category, account: tx.account, to_account: null, method: tx.method, type: tx.type, income_type: null, is_recurring: false, date: tx.date });
+    setTransactions(prev => [tx, ...prev]);
+    await supabase.from('debts').update({ remaining_amount: newRemaining }).eq('id', debtId);
+    setDebts(prev => prev.map(d => d.id === debtId ? { ...d, remainingAmount: newRemaining } : d));
   };
 
   // ============================================================
@@ -1132,6 +1625,7 @@ export default function App() {
           <div className="space-y-1 flex-1">
             {[
               { icon: User, label: 'Mi Perfil', tab: 'profile' },
+              { icon: Users, label: 'Deudas', tab: 'debts' },
               { icon: TrendingUp, label: 'Proyecciones', tab: 'future' },
               { icon: Target, label: 'Presupuestos', tab: null, action: () => { setShowBudgetModal(true); setShowMenu(false); } },
               { icon: Zap, label: userPlan.noAds && userPlan.whatsappActive ? 'Plan Pro ✓' : 'Planes', tab: null, action: () => { setShowUpgradeModal(true); setShowMenu(false); } },
@@ -1160,6 +1654,18 @@ export default function App() {
         {activeTab === 'help' && <HelpView onBack={() => changeTab('dashboard')} />}
         {activeTab === 'reports' && <ReportsView transactions={transactions} />}
         {activeTab === 'future' && <FutureView liquidBalance={liquidBalance} />}
+        {activeTab === 'debts' && (
+          <DebtView
+            debts={debts}
+            accounts={accountsList}
+            onAdd={handleSaveDebt}
+            onEdit={handleEditDebt}
+            onDelete={handleDeleteDebt}
+            onPay={handlePayDebt}
+            onBack={() => changeTab('dashboard')}
+            dolarRates={dolarRates}
+          />
+        )}
 
         {activeTab === 'settings' && (
           <div className="space-y-6 animate-in fade-in">
@@ -1196,10 +1702,19 @@ export default function App() {
                 <span className="text-xl font-light text-[#86868B]">$</span>
                 <h2 className="text-4xl font-semibold tracking-tighter">{fmtARS(liquidBalance)}</h2>
               </div>
-              <div className="mt-4 pt-3 border-t border-gray-100 grid grid-cols-3 gap-2 text-center">
-                <div><p className="text-[10px] text-green-500 font-bold uppercase">Ingresos</p><p className="text-sm font-bold text-green-600 mt-0.5">$ {fmtARS(monthlyStats.income)}</p></div>
-                <div><p className="text-[10px] text-red-500 font-bold uppercase flex items-center justify-center gap-0.5"><Flame size={9} />Gastos</p><p className="text-sm font-bold text-red-500 mt-0.5">$ {fmtARS(monthlyStats.expense)}</p></div>
-                <div><p className="text-[10px] text-gray-400 font-bold uppercase">Impacto</p><p className="text-sm font-bold text-gray-700 mt-0.5">{percentageBurn.toFixed(0)}%</p></div>
+              <div className="mt-4 pt-3 border-t border-gray-100 flex items-start justify-between gap-1">
+                <div>
+                  <p className="text-[10px] text-green-500 font-bold uppercase">Ingresos</p>
+                  <p className="text-xs font-bold text-green-600 mt-0.5 whitespace-nowrap">$ {fmtARS(monthlyStats.income)}</p>
+                </div>
+                <div className="text-center">
+                  <p className="text-[10px] text-red-500 font-bold uppercase flex items-center justify-center gap-0.5"><Flame size={9} />Gastos</p>
+                  <p className="text-xs font-bold text-red-500 mt-0.5 whitespace-nowrap">$ {fmtARS(monthlyStats.expense)}</p>
+                </div>
+                <div className="text-right">
+                  <p className="text-[10px] text-gray-400 font-bold uppercase">Impacto</p>
+                  <p className="text-sm font-bold text-gray-700 mt-0.5">{percentageBurn.toFixed(0)}%</p>
+                </div>
               </div>
             </div>
 
@@ -1263,18 +1778,74 @@ export default function App() {
               </div>
             )}
 
-            {/* Patrimonio neto */}
-            <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-4">
-              <div className="flex justify-between items-start">
+            {/* Patrimonio neto — desglose activos/pasivos */}
+            <div className="bg-white rounded-[2rem] shadow-sm border border-gray-100 overflow-hidden">
+              {/* Header */}
+              <div className="px-5 pt-5 pb-4 flex justify-between items-start border-b border-gray-100">
                 <div>
-                  <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wide">Patrimonio Neto</span>
-                  <p className="text-2xl font-bold mt-0.5">$ {fmtARS(Math.round(patrimonioTotal))}</p>
-                  {!dolarRates && <p className="text-[10px] text-gray-400 mt-0.5">Convertiendo USD...</p>}
+                  <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wide">Patrimonio Neto Real</span>
+                  <p className={`text-3xl font-bold mt-0.5 ${patrimonioNeto >= 0 ? 'text-black' : 'text-red-600'}`}>
+                    {patrimonioNeto < 0 ? '-' : ''} $ {fmtARS(Math.abs(Math.round(patrimonioNeto)))}
+                  </p>
+                  {!dolarRates && <p className="text-[10px] text-gray-400 mt-1">Actualizando cotización USD...</p>}
                 </div>
-                <div className="text-right space-y-1 text-sm">
-                  <div><span className="text-[10px] text-gray-400">ARS</span><p className="font-bold">$ {fmtARS(arsTotal)}</p></div>
-                  {usdTotal > 0 && <div><span className="text-[10px] text-gray-400">USD</span><p className="font-bold text-green-600">u$s {fmtARS(usdTotal)}</p></div>}
+                <div className={`px-3 py-1.5 rounded-full text-xs font-bold ${patrimonioNeto >= 0 ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-700'}`}>
+                  {patrimonioNeto >= 0 ? '▲ Positivo' : '▼ Negativo'}
                 </div>
+              </div>
+
+              {/* Activos */}
+              <div className="px-5 py-3 border-b border-gray-50">
+                <div className="flex justify-between items-center mb-2">
+                  <span className="text-xs font-bold text-green-600 uppercase tracking-wide">✅ Activos</span>
+                  <span className="text-sm font-bold text-green-700">$ {fmtARS(Math.round(totalActivos))}</span>
+                </div>
+                <div className="space-y-1.5">
+                  {activosBancos > 0 && (
+                    <div className="flex justify-between items-center">
+                      <span className="text-xs text-gray-400">🏦 Bancos / Efectivo</span>
+                      <span className="text-xs font-bold text-gray-600">$ {fmtARS(Math.round(activosBancos))}</span>
+                    </div>
+                  )}
+                  {activosAhorroARS > 0 && (
+                    <div className="flex justify-between items-center">
+                      <span className="text-xs text-gray-400">🐷 Ahorros e Inversiones</span>
+                      <span className="text-xs font-bold text-gray-600">$ {fmtARS(Math.round(activosAhorroARS))}</span>
+                    </div>
+                  )}
+                  {activosUSD > 0 && (
+                    <div className="flex justify-between items-center">
+                      <span className="text-xs text-gray-400">🇺🇸 USD (u$s {fmtARS(activosUSD)} × ${fmtARS(blueRate)})</span>
+                      <span className="text-xs font-bold text-gray-600">$ {fmtARS(Math.round(activosUSD * blueRate))}</span>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Pasivos */}
+              <div className="px-5 py-3">
+                <div className="flex justify-between items-center mb-2">
+                  <span className="text-xs font-bold text-red-500 uppercase tracking-wide">🔴 Pasivos</span>
+                  <span className="text-sm font-bold text-red-600">$ {fmtARS(Math.round(totalPasivos))}</span>
+                </div>
+                {totalPasivos === 0 ? (
+                  <p className="text-xs text-gray-300 italic">Sin deudas registradas</p>
+                ) : (
+                  <div className="space-y-1.5">
+                    {pasivosTarjetas > 0 && (
+                      <div className="flex justify-between items-center">
+                        <span className="text-xs text-gray-400">💳 Tarjetas de crédito</span>
+                        <span className="text-xs font-bold text-red-500">- $ {fmtARS(Math.round(pasivosTarjetas))}</span>
+                      </div>
+                    )}
+                    {pasivosDeudas > 0 && (
+                      <div className="flex justify-between items-center">
+                        <span className="text-xs text-gray-400">🤝 Deudas personales</span>
+                        <span className="text-xs font-bold text-red-500">- $ {fmtARS(Math.round(pasivosDeudas))}</span>
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
             </div>
 
@@ -1312,7 +1883,7 @@ export default function App() {
               ) : transactions.slice(0, 4).map((t, i) => (
                 <div key={t.id} onClick={() => openTxModal(t)} className={`px-4 py-3 flex items-center justify-between cursor-pointer hover:bg-gray-50 ${i !== 3 ? 'border-b border-gray-50' : ''}`}>
                   <div className="flex items-center gap-3">
-                    <div className={`w-10 h-10 rounded-full flex items-center justify-center text-base flex-shrink-0 ${t.type === 'ingreso' ? 'bg-green-100' : t.type === 'transferencia' ? 'bg-blue-100' : 'bg-gray-100'}`}>{getCategoryEmoji(t.category)}</div>
+                    <div className={`w-10 h-10 rounded-full flex items-center justify-center text-base flex-shrink-0 ${t.type === 'ingreso' ? 'bg-green-100' : t.type === 'transferencia' ? 'bg-blue-100' : 'bg-gray-100'}`}>{getCatEmoji(t.category)}</div>
                     <div><p className="font-bold text-sm">{t.description}</p><p className="text-xs text-gray-400">{t.account}{t.type === 'transferencia' && t.toAccount ? ` → ${t.toAccount}` : ''} · {t.date}</p></div>
                   </div>
                   <span className={`font-bold text-sm ml-2 flex-shrink-0 ${t.type === 'ingreso' ? 'text-green-600' : t.type === 'transferencia' ? 'text-blue-600' : 'text-black'}`}>
@@ -1345,16 +1916,20 @@ export default function App() {
                       return (
                         <div key={acc.id} onClick={() => setSelectedAccountForAction(acc)} className="bg-white rounded-2xl p-4 shadow-sm border border-gray-100 flex justify-between items-center cursor-pointer active:scale-[0.98] transition-transform">
                           <div className="flex items-center gap-3">
-                            <div className={`w-12 h-12 rounded-xl flex items-center justify-center ${conf.bg}`}><TypeIcon size={22} style={{ color: conf.color }} /></div>
+                            <div className={`w-12 h-12 rounded-xl flex items-center justify-center ${conf.bg}`}>
+                              {customAccountEmojis[acc.id] ? <span className="text-2xl">{customAccountEmojis[acc.id]}</span> : <TypeIcon size={22} style={{ color: conf.color }} />}
+                            </div>
                             <div>
                               <p className="font-bold">{acc.name}</p>
-                              {isCredit && available !== null && <p className="text-[11px] text-gray-400">Disponible: $ {fmtARS(available)}</p>}
+                              {isCredit && available !== null && <p className="text-[11px] text-red-400">Gastado: ${fmtARS(debt)} / ${fmtARS(acc.limit!)}</p>}
                               {acc.currency === 'USD' && <p className="text-[11px] text-gray-400">Cuenta en dólares</p>}
                             </div>
                           </div>
                           <div className="text-right">
                             {isCredit
-                              ? <><p className="font-bold text-base text-red-500">- $ {fmtARS(debt)}</p><p className="text-[10px] text-red-400 font-bold uppercase">Deuda</p></>
+                              ? available !== null
+                                ? <><p className="font-bold text-base">${fmtARS(available)}</p><p className="text-[10px] text-gray-400 font-bold uppercase">Disponible</p></>
+                                : <><p className="font-bold text-base text-red-500">- ${fmtARS(debt)}</p><p className="text-[10px] text-red-400 font-bold uppercase">Deuda</p></>
                               : <p className="font-bold text-base">{acc.currency === 'USD' ? 'u$s' : '$'} {fmtARS(acc.current)}</p>
                             }
                           </div>
@@ -1407,7 +1982,7 @@ export default function App() {
               {filteredTxs.map(t => (
                 <div key={t.id} onClick={() => openTxModal(t)} className="bg-white p-4 rounded-2xl shadow-sm border border-gray-100 flex items-center justify-between cursor-pointer active:scale-[0.99] transition-transform">
                   <div className="flex items-center gap-3">
-                    <div className={`w-10 h-10 rounded-full flex items-center justify-center text-base flex-shrink-0 ${t.type === 'ingreso' ? 'bg-green-100' : t.type === 'transferencia' ? 'bg-blue-100' : 'bg-gray-100'}`}>{getCategoryEmoji(t.category)}</div>
+                    <div className={`w-10 h-10 rounded-full flex items-center justify-center text-base flex-shrink-0 ${t.type === 'ingreso' ? 'bg-green-100' : t.type === 'transferencia' ? 'bg-blue-100' : 'bg-gray-100'}`}>{getCatEmoji(t.category)}</div>
                     <div>
                       <p className="font-bold text-sm">{t.description}</p>
                       <p className="text-xs text-gray-400">{t.date} · {t.account}{t.type === 'transferencia' && t.toAccount ? ` → ${t.toAccount}` : ''}{t.isRecurring ? ' · 🔄' : ''}</p>
@@ -1481,18 +2056,26 @@ export default function App() {
                 <div>
                   <label className="text-[10px] font-bold text-gray-400 uppercase ml-1">Categoría</label>
                   {addingCategory ? (
-                    <div className="flex gap-1 mt-1">
-                      <input
-                        autoFocus
-                        type="text"
-                        value={newCategoryInput}
-                        onChange={e => setNewCategoryInput(e.target.value)}
-                        onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); addCustomCategory(newCategoryInput, transForm.type); } }}
-                        placeholder="Nueva categoría"
-                        className="flex-1 bg-gray-50 p-2.5 rounded-xl text-sm outline-none border border-indigo-300 min-w-0"
-                      />
-                      <button type="button" onClick={() => addCustomCategory(newCategoryInput, transForm.type)} className="px-2.5 bg-indigo-600 text-white rounded-xl text-sm font-bold">✓</button>
-                      <button type="button" onClick={() => { setAddingCategory(false); setNewCategoryInput(''); }} className="px-2.5 bg-gray-200 rounded-xl text-sm">✕</button>
+                    <div className="mt-1 space-y-2">
+                      <div className="flex gap-1">
+                        <button type="button" className="text-xl w-10 h-10 flex-shrink-0 bg-gray-100 rounded-xl flex items-center justify-center">{newCategoryEmoji}</button>
+                        <input
+                          autoFocus
+                          type="text"
+                          value={newCategoryInput}
+                          onChange={e => setNewCategoryInput(e.target.value)}
+                          onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); addCustomCategory(newCategoryInput, transForm.type, newCategoryEmoji); } }}
+                          placeholder="Nueva categoría"
+                          className="flex-1 bg-gray-50 p-2.5 rounded-xl text-sm outline-none border border-indigo-300 min-w-0"
+                        />
+                        <button type="button" onClick={() => addCustomCategory(newCategoryInput, transForm.type, newCategoryEmoji)} className="px-2.5 bg-indigo-600 text-white rounded-xl text-sm font-bold">✓</button>
+                        <button type="button" onClick={() => { setAddingCategory(false); setNewCategoryInput(''); setNewCategoryEmoji('📋'); }} className="px-2.5 bg-gray-200 rounded-xl text-sm">✕</button>
+                      </div>
+                      <div className="grid grid-cols-8 gap-1 max-h-20 overflow-y-auto bg-gray-50 rounded-xl p-1.5">
+                        {EMOJI_LIST.map(e => (
+                          <button key={e} type="button" onClick={() => setNewCategoryEmoji(e)} className={`text-lg p-1 rounded-lg transition-colors ${newCategoryEmoji === e ? 'bg-indigo-100 ring-1 ring-indigo-400' : 'hover:bg-gray-200'}`}>{e}</button>
+                        ))}
+                      </div>
                     </div>
                   ) : (
                     <select className="w-full bg-gray-50 p-3 rounded-xl text-sm mt-1" value={transForm.category} onChange={e => { if (e.target.value === '__add__') setAddingCategory(true); else setTransForm({ ...transForm, category: e.target.value }); }}>
@@ -1518,6 +2101,25 @@ export default function App() {
                   <select className="w-full bg-gray-50 p-3 rounded-xl text-sm mt-1" value={transForm.toAccount} onChange={e => setTransForm({ ...transForm, toAccount: e.target.value })}>
                     {accountsList.filter(a => a.name !== transForm.account).map(a => <option key={a.id} value={a.name}>{a.name}</option>)}
                   </select>
+                </div>
+              )}
+              {transForm.category === 'Pago de deuda' && transForm.type === 'gasto' && (
+                <div>
+                  <label className="text-[10px] font-bold text-gray-400 uppercase ml-1">¿A cuál deuda aplicar?</label>
+                  <select
+                    className="w-full bg-orange-50 border border-orange-200 p-3 rounded-xl text-sm mt-1"
+                    value={transForm.debtPaymentId}
+                    onChange={e => {
+                      const debt = debts.find(d => d.id === e.target.value);
+                      setTransForm({ ...transForm, debtPaymentId: e.target.value, description: debt ? `Pago: ${debt.person}${debt.concept ? ` · ${debt.concept}` : ''}` : transForm.description, amount: debt ? fmtARS(debt.remainingAmount) : transForm.amount });
+                    }}
+                  >
+                    <option value="">— Sin vincular —</option>
+                    {debts.filter(d => d.type === 'les_debo' && d.remainingAmount > 0).map(d => (
+                      <option key={d.id} value={d.id}>📤 {d.person}{d.concept ? ` · ${d.concept}` : ''} — ${fmtARS(d.remainingAmount)}</option>
+                    ))}
+                  </select>
+                  {transForm.debtPaymentId && <p className="text-[10px] text-orange-600 font-medium mt-1 ml-1">✓ Al guardar se descontará del saldo pendiente</p>}
                 </div>
               )}
               {transForm.type !== 'transferencia' && (
@@ -1594,11 +2196,29 @@ export default function App() {
                   ))}
                 </div>
               </div>
-              <div><label className="text-[10px] font-bold text-gray-400 uppercase ml-1">Saldo Actual</label><input type="text" inputMode="decimal" placeholder="0" value={accForm.balance} onChange={e => setAccForm({ ...accForm, balance: formatInput(e.target.value) })} className="w-full bg-gray-50 p-3 rounded-xl border mt-1" /></div>
               {accForm.type === 'credito' && (
                 <div><label className="text-[10px] font-bold text-gray-400 uppercase ml-1">Límite de la Tarjeta</label><input type="text" inputMode="decimal" placeholder="0" value={accForm.limit} onChange={e => setAccForm({ ...accForm, limit: formatInput(e.target.value) })} className="w-full bg-gray-50 p-3 rounded-xl border mt-1" /></div>
               )}
+              <div>
+                <label className="text-[10px] font-bold text-gray-400 uppercase ml-1">
+                  {accForm.type === 'credito' ? 'Crédito Disponible' : 'Saldo Actual'}
+                </label>
+                <input type="text" inputMode="decimal" placeholder="0" value={accForm.balance} onChange={e => setAccForm({ ...accForm, balance: formatInput(e.target.value) })} className="w-full bg-gray-50 p-3 rounded-xl border mt-1" />
+                {accForm.type === 'credito' && <p className="text-[10px] text-gray-400 ml-1 mt-1">Lo que aún podés gastar con esta tarjeta.</p>}
+              </div>
               {accForm.id && <p className="text-xs text-gray-400 p-2 bg-gray-50 rounded-xl">✏️ Podés corregir el saldo sin que se genere ningún movimiento.</p>}
+              <div>
+                <label className="text-[10px] font-bold text-gray-400 uppercase ml-1">Ícono personalizado (opcional)</label>
+                <div className="flex items-center gap-2 mt-1">
+                  <div className="w-12 h-12 rounded-xl bg-gray-100 flex items-center justify-center text-2xl flex-shrink-0">{accForm.emoji || '🏦'}</div>
+                  <div className="grid grid-cols-8 gap-1 flex-1 max-h-20 overflow-y-auto bg-gray-50 rounded-xl p-1.5">
+                    <button type="button" onClick={() => setAccForm({ ...accForm, emoji: '' })} className={`text-lg p-1 rounded-lg ${!accForm.emoji ? 'bg-indigo-100 ring-1 ring-indigo-400' : 'hover:bg-gray-200'}`}>🏦</button>
+                    {EMOJI_LIST.map(e => (
+                      <button key={e} type="button" onClick={() => setAccForm({ ...accForm, emoji: e })} className={`text-lg p-1 rounded-lg transition-colors ${accForm.emoji === e ? 'bg-indigo-100 ring-1 ring-indigo-400' : 'hover:bg-gray-200'}`}>{e}</button>
+                    ))}
+                  </div>
+                </div>
+              </div>
               <button className="w-full bg-black text-white font-bold py-3 rounded-2xl">Guardar</button>
             </form>
           </div>
@@ -1627,6 +2247,15 @@ export default function App() {
               </button>
               <button onClick={() => { openTxModal(undefined, 'transferencia', selectedAccountForAction.name); setSelectedAccountForAction(null); }} className="p-4 bg-blue-50 rounded-2xl text-blue-800 font-bold flex flex-col items-center gap-2 text-xs"><ArrowRightLeft size={20} /> Transferir</button>
             </div>
+            {selectedAccountForAction.type === 'credito' && (
+              <button onClick={() => {
+                const fromAcc = accountsList.find(a => a.type !== 'credito');
+                openTxModal(undefined, 'transferencia', fromAcc?.name, selectedAccountForAction.name);
+                setSelectedAccountForAction(null);
+              }} className="w-full py-3 bg-purple-50 rounded-2xl font-bold text-purple-700 flex items-center justify-center gap-2 mb-2">
+                <CreditCard size={16} /> Pagar tarjeta
+              </button>
+            )}
             <button onClick={() => { openAccModal(selectedAccountForAction); setSelectedAccountForAction(null); }} className="w-full py-3 bg-gray-100 rounded-2xl font-bold text-gray-600 flex items-center justify-center gap-2"><Pencil size={16} /> Editar / Ajustar Saldo</button>
           </div>
         </div>
