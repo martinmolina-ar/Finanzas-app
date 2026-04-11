@@ -1410,7 +1410,8 @@ export default function App() {
   const activosBancos = accountBalances.filter(a => (a.type === 'gastos' || a.type === 'efectivo') && a.currency === 'ARS').reduce((s, a) => s + Math.max(0, a.current), 0);
   const activosAhorroARS = accountBalances.filter(a => a.type === 'ahorro' && a.currency === 'ARS').reduce((s, a) => s + Math.max(0, a.current), 0);
   const activosUSD = accountBalances.filter(a => a.currency === 'USD').reduce((s, a) => s + Math.max(0, a.current), 0);
-  const totalActivos = activosBancos + activosAhorroARS + activosUSD * blueRate;
+  const activosMeDeben = debts.filter(d => d.type === 'me_deben' && d.remainingAmount > 0).reduce((s, d) => s + (d.currency === 'ARS' ? d.remainingAmount : d.remainingAmount * blueRate), 0);
+  const totalActivos = activosBancos + activosAhorroARS + activosUSD * blueRate + activosMeDeben;
   const pasivosTarjetas = accountBalances.filter(a => a.type === 'credito').reduce((s, a) => s + Math.abs(Math.min(0, a.current)), 0);
   const pasivosDeudas = debts.filter(d => d.type === 'les_debo' && d.remainingAmount > 0).reduce((s, d) => s + (d.currency === 'ARS' ? d.remainingAmount : d.remainingAmount * blueRate), 0);
   const totalPasivos = pasivosTarjetas + pasivosDeudas;
@@ -1817,6 +1818,12 @@ export default function App() {
                     <div className="flex justify-between items-center">
                       <span className="text-xs text-gray-400">🇺🇸 USD (u$s {fmtARS(activosUSD)} × ${fmtARS(blueRate)})</span>
                       <span className="text-xs font-bold text-gray-600">$ {fmtARS(Math.round(activosUSD * blueRate))}</span>
+                    </div>
+                  )}
+                  {activosMeDeben > 0 && (
+                    <div className="flex justify-between items-center">
+                      <span className="text-xs text-gray-400">🤝 Me deben</span>
+                      <span className="text-xs font-bold text-gray-600">$ {fmtARS(Math.round(activosMeDeben))}</span>
                     </div>
                   )}
                 </div>
