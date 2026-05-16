@@ -67,6 +67,23 @@ interface Debt {
   currency: Currency;
 }
 
+interface Habit {
+  id: string;
+  name: string;
+  emoji: string;
+  color: string;
+  frequency: 'daily' | 'weekly';
+  createdAt: string;
+}
+
+interface HabitLog {
+  id: string;
+  habitId: string;
+  date: string;
+}
+
+const HABIT_COLORS = ['#10B981', '#3B82F6', '#F59E0B', '#EF4444', '#8B5CF6', '#EC4899', '#06B6D4', '#84CC16'];
+
 interface DolarRates {
   blue: number;
   oficial: number;
@@ -239,6 +256,31 @@ const CATEGORY_ICONS: Record<string, any> = {
 };
 
 // --- COMPONENTES VISUALES ---
+
+const useCountUp = (target: number, duration = 800) => {
+  const [val, setVal] = useState(0);
+  const prev = useRef(0);
+  useEffect(() => {
+    const start = prev.current;
+    const diff = target - start;
+    if (diff === 0) return;
+    const startTime = performance.now();
+    const tick = (now: number) => {
+      const elapsed = Math.min((now - startTime) / duration, 1);
+      const ease = 1 - Math.pow(1 - elapsed, 3);
+      setVal(Math.round(start + diff * ease));
+      if (elapsed < 1) requestAnimationFrame(tick);
+      else prev.current = target;
+    };
+    requestAnimationFrame(tick);
+  }, [target, duration]);
+  return val;
+};
+
+const AnimatedNumber = ({ value, prefix = '$' }: { value: number, prefix?: string }) => {
+  const animated = useCountUp(value);
+  return <>{prefix} {fmtARS(animated)}</>;
+};
 
 const ReportsDonut = ({ data, total, title }: { data: any[], total: number, title: string }) => (
   <div className="bg-white p-6 rounded-[2rem] shadow-sm flex flex-col items-center">
@@ -1166,6 +1208,167 @@ const LockScreen = ({ user, onUnlock, onSignOut }: { user: any; onUnlock: () => 
 };
 
 // ============================================================
+// HÁBITOS
+// ============================================================
+
+const HabitsView = ({
+  habits, logs, onAdd, onDelete, onToggle, onBack, userId
+}: {
+  habits: Habit[];
+  logs: HabitLog[];
+  onAdd: (h: Omit<Habit, 'id' | 'createdAt'>) => void;
+  onDelete: (id: string) => void;
+  onToggle: (habitId: string, date: string) => void;
+  onBack: () => void;
+  userId: string;
+}) => {
+  const [showForm, setShowForm] = useState(false);
+  const [form, setForm] = useState<{ name: string; emoji: string; color: string; frequency: 'daily' | 'weekly' }>({ name: '', emoji: '✅', color: '#10B981', frequency: 'daily' });
+  const today = new Date().toISOString().split('T')[0];
+
+  const last7 = Array.from({ length: 7 }, (_, i) => {
+    const d = new Date();
+    d.setDate(d.getDate() - (6 - i));
+    return d.toISOString().split('T')[0];
+  });
+
+  const getStreak = (habitId: string) => {
+    let streak = 0;
+    const d = new Date();
+    while (true) {
+      const dateStr = d.toISOString().split('T')[0];
+      if (logs.some(l => l.habitId === habitId && l.date === dateStr)) {
+        streak++;
+        d.setDate(d.getDate() - 1);
+      } else {
+        break;
+      }
+    }
+    return streak;
+  };
+
+  const isCompleted = (habitId: string, date: string) => logs.some(l => l.habitId === habitId && l.date === date);
+  const todayCompleted = habits.filter(h => isCompleted(h.id, today)).length;
+  const completionRate = habits.length ? Math.round((todayCompleted / habits.length) * 100) : 0;
+
+  const HABIT_EMOJIS = ['✅','🏃','💪','📚','💧','🧘','🥗','😴','🚴','🎯','✍️','🧹','💊','🌿','🎸','🖥️','📝','🏋️','🛁','☀️'];
+
+  return (
+    <div className="space-y-5 animate-in fade-in">
+      <div className="flex items-center gap-3">
+        <button onClick={onBack} className="p-2 bg-white rounded-full shadow-sm"><ArrowLeft size={20} /></button>
+        <h2 className="text-2xl font-bold flex-1">Hábitos</h2>
+        <button onClick={() => setShowForm(true)} className="bg-black text-white px-3 py-1.5 rounded-full text-xs font-bold flex items-center gap-1"><Plus size={14} /> Nuevo</button>
+      </div>
+
+      <div className="bg-gradient-to-br from-indigo-600 to-purple-600 rounded-3xl p-5 text-white">
+        <p className="text-sm font-medium opacity-80">Hoy completaste</p>
+        <p className="text-4xl font-bold mt-1">{todayCompleted}<span className="text-xl opacity-60">/{habits.length}</span></p>
+        <div className="mt-3 bg-white/20 rounded-full h-2">
+          <div className="bg-white h-2 rounded-full transition-all duration-700" style={{ width: `${completionRate}%` }} />
+        </div>
+        <p className="text-xs mt-2 opacity-70">{completionRate}% completado</p>
+      </div>
+
+      {habits.length === 0 ? (
+        <div className="text-center py-12 space-y-3">
+          <div className="text-5xl">🌱</div>
+          <p className="font-bold text-lg">Empezá tu primer hábito</p>
+          <p className="text-sm text-gray-400">Los pequeños hábitos generan grandes cambios</p>
+          <button onClick={() => setShowForm(true)} className="bg-black text-white px-6 py-3 rounded-2xl font-bold">Crear hábito</button>
+        </div>
+      ) : (
+        <div className="space-y-3">
+          {habits.map(habit => {
+            const streak = getStreak(habit.id);
+            const completedToday = isCompleted(habit.id, today);
+            return (
+              <div key={habit.id} className="bg-white rounded-2xl p-4 shadow-sm border border-gray-100">
+                <div className="flex items-center gap-3">
+                  <button
+                    onClick={() => onToggle(habit.id, today)}
+                    className="w-12 h-12 rounded-2xl flex items-center justify-center text-2xl flex-shrink-0 transition-all active:scale-90"
+                    style={{ backgroundColor: completedToday ? habit.color : '#F3F4F6' }}
+                  >
+                    {completedToday ? '✅' : habit.emoji}
+                  </button>
+                  <div className="flex-1">
+                    <p className="font-bold">{habit.name}</p>
+                    <div className="flex items-center gap-3 mt-1">
+                      {streak > 0 && <span className="text-xs font-bold text-orange-500 flex items-center gap-1"><Flame size={12} /> {streak} días</span>}
+                      <div className="flex gap-1">
+                        {last7.map(date => (
+                          <div key={date} className="w-5 h-5 rounded-full flex items-center justify-center" style={{ backgroundColor: isCompleted(habit.id, date) ? habit.color : '#F3F4F6' }}>
+                            {isCompleted(habit.id, date) && <span className="text-white text-[8px] font-bold">✓</span>}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                  <button onClick={() => onDelete(habit.id)} className="p-2 text-gray-300 hover:text-red-400 transition-colors"><Trash2 size={16} /></button>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {showForm && (
+        <div className="fixed inset-0 z-[70] flex items-end justify-center bg-black/60 backdrop-blur-sm" onClick={() => setShowForm(false)}>
+          <div className="bg-white rounded-t-[2rem] p-6 w-full max-w-sm" onClick={e => e.stopPropagation()}>
+            <div className="flex justify-between items-center mb-4">
+              <h3 className="text-xl font-bold">Nuevo Hábito</h3>
+              <button onClick={() => setShowForm(false)} className="p-2 bg-gray-100 rounded-full"><X size={18} /></button>
+            </div>
+            <div className="space-y-4">
+              <div>
+                <label className="text-[10px] font-bold text-gray-400 uppercase ml-1">Nombre</label>
+                <input value={form.name} onChange={e => setForm({...form, name: e.target.value})} placeholder="Ej: Hacer ejercicio" className="w-full bg-gray-50 p-3 rounded-xl border mt-1 outline-none" />
+              </div>
+              <div>
+                <label className="text-[10px] font-bold text-gray-400 uppercase ml-1">Emoji</label>
+                <div className="grid grid-cols-10 gap-1 mt-1 bg-gray-50 rounded-xl p-2">
+                  {HABIT_EMOJIS.map(e => (
+                    <button key={e} type="button" onClick={() => setForm({...form, emoji: e})} className={`text-xl p-1 rounded-lg ${form.emoji === e ? 'bg-white shadow' : ''}`}>{e}</button>
+                  ))}
+                </div>
+              </div>
+              <div>
+                <label className="text-[10px] font-bold text-gray-400 uppercase ml-1">Color</label>
+                <div className="flex gap-2 mt-1">
+                  {HABIT_COLORS.map(c => (
+                    <button key={c} type="button" onClick={() => setForm({...form, color: c})} className={`w-8 h-8 rounded-full transition-transform ${form.color === c ? 'scale-125 ring-2 ring-offset-2 ring-gray-400' : ''}`} style={{ backgroundColor: c }} />
+                  ))}
+                </div>
+              </div>
+              <div>
+                <label className="text-[10px] font-bold text-gray-400 uppercase ml-1">Frecuencia</label>
+                <div className="flex bg-gray-100 p-1 rounded-xl mt-1">
+                  {(['daily', 'weekly'] as const).map(f => (
+                    <button key={f} type="button" onClick={() => setForm({...form, frequency: f})} className={`flex-1 py-2 text-xs font-bold rounded-lg ${form.frequency === f ? 'bg-white shadow' : ''}`}>{f === 'daily' ? 'Diario' : 'Semanal'}</button>
+                  ))}
+                </div>
+              </div>
+              <button
+                onClick={() => {
+                  if (!form.name.trim()) return;
+                  onAdd(form);
+                  setShowForm(false);
+                  setForm({ name: '', emoji: '✅', color: '#10B981', frequency: 'daily' });
+                }}
+                className="w-full bg-black text-white font-bold py-4 rounded-2xl"
+              >
+                Crear Hábito
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
+
+// ============================================================
 // APP PRINCIPAL
 // ============================================================
 
@@ -1176,6 +1379,14 @@ export default function App() {
   const [accountsList, setAccountsList] = useState<AccountItem[]>([]);
   const [budgets, setBudgets] = useState<Budget[]>([]);
   const [debts, setDebts] = useState<Debt[]>([]);
+  const [habits, setHabits] = useState<Habit[]>([]);
+  const [habitLogs, setHabitLogs] = useState<HabitLog[]>([]);
+  const [toasts, setToasts] = useState<{id: string, msg: string, type: 'success'|'error'}[]>([]);
+  const showToast = useCallback((msg: string, type: 'success'|'error' = 'success') => {
+    const id = Date.now().toString();
+    setToasts(prev => [...prev, { id, msg, type }]);
+    setTimeout(() => setToasts(prev => prev.filter(t => t.id !== id)), 3000);
+  }, []);
   const [activeTab, setActiveTab] = useState('dashboard');
   const [showMenu, setShowMenu] = useState(false);
   const [showTransactionModal, setShowTransactionModal] = useState(false);
@@ -1296,16 +1507,20 @@ export default function App() {
   useEffect(() => {
     if (!currentUser?.id) return;
     const load = async () => {
-      const [{ data: txs }, { data: accs }, { data: buds }, { data: dts }] = await Promise.all([
+      const [{ data: txs }, { data: accs }, { data: buds }, { data: dts }, { data: hbts }, { data: hlogs }] = await Promise.all([
         supabase.from('transactions').select('*').eq('user_id', currentUser.id).order('date', { ascending: false }),
         supabase.from('accounts').select('*').eq('user_id', currentUser.id),
         supabase.from('budgets').select('*').eq('user_id', currentUser.id),
         supabase.from('debts').select('*').eq('user_id', currentUser.id).order('date', { ascending: false }),
+        supabase.from('habits').select('*').eq('user_id', currentUser.id).order('created_at'),
+        supabase.from('habit_logs').select('*').eq('user_id', currentUser.id),
       ]);
       if (txs) setTransactions(txs.map((t: any) => ({ id: t.id, amount: t.amount, description: t.description, category: t.category, account: t.account, toAccount: t.to_account, method: t.method, type: t.type, incomeType: t.income_type, isRecurring: t.is_recurring, date: t.date })));
       if (accs) setAccountsList(accs.map((a: any) => ({ id: a.id, name: a.name, provider: a.provider, initialBalance: a.initial_balance, limit: a.limit_amount, type: a.type, currency: a.currency })));
       if (buds) setBudgets(buds.map((b: any) => ({ category: b.category, limit: b.limit_amount })));
       if (dts) setDebts(dts.map((d: any) => ({ id: d.id, person: d.person, concept: d.concept || '', originalAmount: d.original_amount, remainingAmount: d.remaining_amount, type: d.type, date: d.date, currency: d.currency })));
+      if (hbts) setHabits(hbts.map((h: any) => ({ id: h.id, name: h.name, emoji: h.emoji, color: h.color, frequency: h.frequency, createdAt: h.created_at })));
+      if (hlogs) setHabitLogs(hlogs.map((l: any) => ({ id: l.id, habitId: l.habit_id, date: l.date })));
       // Cargar plan
       const { data: profile } = await supabase.from('profiles').select('no_ads, whatsapp_active, phone').eq('user_id', currentUser.id).single();
       if (profile) {
@@ -1486,6 +1701,7 @@ export default function App() {
         setDebts(prev => prev.map(d => d.id === debt.id ? { ...d, remainingAmount: newRemaining } : d));
       }
     }
+    showToast(transForm.id ? 'Movimiento actualizado ✓' : 'Movimiento guardado ✓');
     setShowTransactionModal(false);
   };
 
@@ -1540,6 +1756,7 @@ export default function App() {
         supabase.auth.updateUser({ data: { custom_account_emojis: updatedAccEmojis } });
       }
     }
+    showToast('Cuenta guardada ✓');
     setShowAccountModal(false);
   };
 
@@ -1600,6 +1817,7 @@ export default function App() {
     const newDebt: Debt = { ...d, id: Date.now().toString() };
     await supabase.from('debts').insert({ id: newDebt.id, user_id: currentUser.id, person: newDebt.person, concept: newDebt.concept, original_amount: newDebt.originalAmount, remaining_amount: newDebt.remainingAmount, type: newDebt.type, date: newDebt.date, currency: newDebt.currency });
     setDebts(prev => [newDebt, ...prev]);
+    showToast('Deuda guardada ✓');
   };
 
   const handleEditDebt = async (d: Debt) => {
@@ -1610,6 +1828,36 @@ export default function App() {
   const handleDeleteDebt = async (id: string) => {
     await supabase.from('debts').delete().eq('id', id);
     setDebts(prev => prev.filter(d => d.id !== id));
+    showToast('Eliminado ✓');
+  };
+
+  // --- HANDLERS HÁBITOS ---
+
+  const handleAddHabit = async (data: Omit<Habit, 'id' | 'createdAt'>) => {
+    const id = Date.now().toString();
+    const habit: Habit = { ...data, id, createdAt: new Date().toISOString() };
+    await supabase.from('habits').insert({ id, user_id: currentUser.id, name: data.name, emoji: data.emoji, color: data.color, frequency: data.frequency });
+    setHabits(prev => [...prev, habit]);
+    showToast('Hábito creado ✓');
+  };
+
+  const handleDeleteHabit = async (id: string) => {
+    await supabase.from('habits').delete().eq('id', id);
+    setHabits(prev => prev.filter(h => h.id !== id));
+    setHabitLogs(prev => prev.filter(l => l.habitId !== id));
+    showToast('Hábito eliminado');
+  };
+
+  const handleToggleHabit = async (habitId: string, date: string) => {
+    const existing = habitLogs.find(l => l.habitId === habitId && l.date === date);
+    if (existing) {
+      await supabase.from('habit_logs').delete().eq('id', existing.id);
+      setHabitLogs(prev => prev.filter(l => l.id !== existing.id));
+    } else {
+      const id = Date.now().toString();
+      await supabase.from('habit_logs').insert({ id, habit_id: habitId, user_id: currentUser.id, date });
+      setHabitLogs(prev => [...prev, { id, habitId, date }]);
+    }
   };
 
   const handlePayDebt = async (debtId: string, debtAmountReduced: number, accountName: string, txAmount: number) => {
@@ -1645,6 +1893,7 @@ export default function App() {
             {[
               { icon: User, label: 'Mi Perfil', tab: 'profile' },
               { icon: Users, label: 'Deudas', tab: 'debts' },
+              { icon: CheckCircle2, label: 'Hábitos', tab: 'habits' },
               { icon: TrendingUp, label: 'Proyecciones', tab: 'future' },
               { icon: Target, label: 'Presupuestos', tab: null, action: () => { setShowBudgetModal(true); setShowMenu(false); } },
               { icon: Zap, label: userPlan.noAds && userPlan.whatsappActive ? 'Plan Pro ✓' : 'Planes', tab: null, action: () => { setShowUpgradeModal(true); setShowMenu(false); } },
@@ -1683,6 +1932,18 @@ export default function App() {
             onPay={handlePayDebt}
             onBack={() => changeTab('dashboard')}
             dolarRates={dolarRates}
+          />
+        )}
+
+        {activeTab === 'habits' && (
+          <HabitsView
+            habits={habits}
+            logs={habitLogs}
+            onAdd={handleAddHabit}
+            onDelete={handleDeleteHabit}
+            onToggle={handleToggleHabit}
+            onBack={() => changeTab('dashboard')}
+            userId={currentUser.id}
           />
         )}
 
@@ -2343,6 +2604,16 @@ export default function App() {
         await supabase.from('budgets').delete().eq('user_id', currentUser.id);
         if (newBudgets.length) await supabase.from('budgets').insert(newBudgets.map(b => ({ user_id: currentUser.id, category: b.category, limit_amount: b.limit })));
       }} onClose={() => setShowBudgetModal(false)} />}
+
+      {/* ── TOASTS ───────────────────────────────────── */}
+      <div className="fixed top-4 left-0 right-0 z-[200] flex flex-col items-center gap-2 pointer-events-none px-4">
+        {toasts.map(t => (
+          <div key={t.id} className={`flex items-center gap-2 px-4 py-3 rounded-2xl shadow-xl text-white text-sm font-bold animate-in slide-in-from-top-4 fade-in duration-300 ${t.type === 'success' ? 'bg-green-500' : 'bg-red-500'}`}>
+            {t.type === 'success' ? <CheckCircle2 size={16} /> : <AlertTriangle size={16} />}
+            {t.msg}
+          </div>
+        ))}
+      </div>
     </div>
   );
 }
