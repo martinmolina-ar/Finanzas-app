@@ -266,19 +266,26 @@ app.get('/mp-sync', async (req, res) => {
     const endDate = new Date().toISOString();
     const startDate = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000).toISOString();
 
-    const [paymentsRes, balanceRes] = await Promise.all([
+    const [paymentsRes, balanceRes, meRes] = await Promise.all([
       fetch(`https://api.mercadopago.com/v1/payments/search?sort=date_created&criteria=desc&range=date_created&begin_date=${startDate}&end_date=${endDate}&limit=100`, {
         headers: { 'Authorization': `Bearer ${token}` }
       }),
       fetch('https://api.mercadopago.com/v1/account/balance', {
         headers: { 'Authorization': `Bearer ${token}` }
+      }),
+      fetch('https://api.mercadopago.com/v1/users/me', {
+        headers: { 'Authorization': `Bearer ${token}` }
       })
     ]);
 
-    const [paymentsData, balanceData] = await Promise.all([paymentsRes.json(), balanceRes.json()]);
+    const [paymentsData, balanceData, meData] = await Promise.all([paymentsRes.json(), balanceRes.json(), meRes.json()]);
 
+    const myMpId = String(meData.id || mpUserId || '');
+    console.log('My MP ID:', myMpId);
     console.log('Balance raw:', JSON.stringify(balanceData));
     console.log('Payments count:', paymentsData.results?.length);
+    // Log first payment to see structure
+    if (paymentsData.results?.[0]) console.log('Sample payment:', JSON.stringify({ payer: paymentsData.results[0].payer, collector: paymentsData.results[0].collector, amount: paymentsData.results[0].transaction_amount, op: paymentsData.results[0].operation_type }));
 
     const balance =
       balanceData.available_balance ??
@@ -292,8 +299,8 @@ app.get('/mp-sync', async (req, res) => {
       .map(p => {
         const payerId = String(p.payer?.id || '');
         const collectorId = String(p.collector?.id || '');
-        const iAmPayer = mpUserId && payerId === mpUserId;
-        const iAmCollector = mpUserId && collectorId === mpUserId;
+        const iAmPayer = myMpId && payerId === myMpId;
+        const iAmCollector = myMpId && collectorId === myMpId;
 
         const isTransfer =
           p.operation_type === 'money_transfer' ||
