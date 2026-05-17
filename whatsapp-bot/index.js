@@ -211,21 +211,22 @@ app.get('/mp-callback', async (req, res) => {
   try {
     const tokenRes = await fetch('https://api.mercadopago.com/oauth/token', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
-      body: JSON.stringify({
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'Accept': 'application/json' },
+      body: new URLSearchParams({
+        grant_type: 'authorization_code',
         client_id: MP_CLIENT_ID,
         client_secret: MP_CLIENT_SECRET,
         code,
-        grant_type: 'authorization_code',
         redirect_uri: MP_REDIRECT_URI,
-      })
+      }).toString()
     });
 
     const tokenData = await tokenRes.json();
     console.log('MP token response:', JSON.stringify(tokenData));
 
     if (tokenData.error || !tokenData.access_token) {
-      return res.redirect(`${APP_URL}?mp_error=${tokenData.error || 'no_token'}`);
+      const errMsg = encodeURIComponent(tokenData.message || tokenData.error || 'no_token');
+      return res.redirect(`${APP_URL}?mp_error=${errMsg}`);
     }
 
     await supabase.from('profiles').upsert({
