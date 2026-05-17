@@ -293,26 +293,51 @@ app.get('/mp-sync', async (req, res) => {
       .filter(p => ['approved', 'settled'].includes(p.status) && Math.abs(p.transaction_amount) > 0)
       .map(p => {
         const collectorId = String(p.collector?.id || '');
-        // payer.id viene null en la API de MP — solo usamos collector
-        // Si collector soy yo → ingreso (alguien me pagó)
-        // Si collector es otro → gasto (yo pagué a alguien)
-        const iAmCollector = myMpId && collectorId === myMpId;
+        const payerId = String(p.payer?.id || '');
+        const op = p.operation_type;
 
-        const isTransfer =
-          p.operation_type === 'money_transfer' ||
-          p.operation_type === 'account_fund';
+        // Determinar tipo basado en la dirección real del dinero
+        let type;
+        if (op === 'account_fund') {
+          // Carga desde banco propio → transferencia entre mis cuentas
+          // Si payer soy yo → yo cargué desde mi banco
+          type = payerId === myMpId ? 'transferencia' : 'ingreso';
+        } else if (op === 'money_transfer') {
+          if (collectorId && collectorId !== myMpId) {
+            type = 'gasto';    // yo mandé plata a alguien
+          } else if (payerId && payerId !== myMpId) {
+            type = 'ingreso';  // alguien me mandó plata
+          } else {
+            type = 'gasto';    // default: salida de plata
+          }
+        } else {
+          // regular_payment, recurring_payment, etc.
+          type = collectorId === myMpId ? 'ingreso' : 'gasto';
+        }
 
-        const type = isTransfer ? 'transferencia'
-          : iAmCollector ? 'ingreso'
-          : 'gasto'; // default: yo pagué
+        // Descripción inteligente: usar nombre del statement_descriptor si la desc es genérica
+        const rawDesc = (p.description || '').trim();
+        const stmtRaw = (p.statement_descriptor || '').trim();
+        // Limpiar "MERPAGO * FLORENCIAVIVANASOSA" → "Florencia Vivana Sosa"
+        const personName = stmtRaw
+          .replace(/MERPAGO\s*\*\s*/i, '')
+          .replace(/MERPAGO\s*/i, '')
+          .trim()
+          .toLowerCase()
+          .replace(/\b\w/g, c => c.toUpperCase());
 
-        const desc = p.description || p.statement_descriptor || p.payment_method_id || 'Mercado Pago';
-        const category = isTransfer ? 'Transferencia'
-          : type === 'gasto'
-            ? (desc.toLowerCase().includes('suscripci') ? 'Suscripciones'
-              : desc.toLowerCase().includes('luz') || desc.toLowerCase().includes('gas') || desc.toLowerCase().includes('agua') || desc.toLowerCase().includes('servicio') ? 'Servicios'
-              : 'Varios')
-          : 'Ventas';
+        const isGeneric = ['varios', 'var', 'bank transfer', ''].includes(rawDesc.toLowerCase());
+        const desc = isGeneric && personName ? personName : (rawDesc || personName || 'Mercado Pago');
+
+        // Categoría
+        const descLow = desc.toLowerCase();
+        const category = type === 'transferencia' ? 'Transferencia'
+          : type === 'ingreso' ? 'Ventas'
+          : descLow.includes('suscripci') || descLow.includes('meli+') ? 'Suscripciones'
+          : descLow.includes('edenor') || descLow.includes('edesur') || descLow.includes('aysa') || descLow.includes('metrogas') || descLow.includes('luz') || descLow.includes('gas') || descLow.includes('agua') ? 'Servicios'
+          : descLow.includes('hospital') || descLow.includes('medic') || descLow.includes('farmaci') ? 'Salud'
+          : descLow.includes('correo') || descLow.includes('andreani') || descLow.includes('oca ') ? 'Transporte'
+          : 'Varios';
 
         return {
           id: `mp_${p.id}`,
@@ -322,7 +347,8 @@ app.get('/mp-sync', async (req, res) => {
           type,
           method: p.payment_type_id === 'credit_card' ? 'credito'
                   : p.payment_type_id === 'debit_card' ? 'debito'
-                  : 'transferencia',
+                  : p.payment_type_id === 'bank_transfer' ? 'transferencia'
+                  : 'efectivo',
           category,
         };
       });
