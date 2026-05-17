@@ -336,7 +336,9 @@ app.get('/mp-sync', async (req, res) => {
 
         // Categoría
         const descLow = desc.toLowerCase();
+        const isRendimiento = descLow.includes('rendimiento') || descLow.includes('fondo') || descLow.includes('interest') || op === 'investment_return' || op === 'money_market';
         const category = type === 'transferencia' ? 'Transferencia'
+          : isRendimiento ? 'Intereses'
           : type === 'ingreso' ? 'Ventas'
           : descLow.includes('suscripci') || descLow.includes('meli+') ? 'Suscripciones'
           : descLow.includes('edenor') || descLow.includes('edesur') || descLow.includes('aysa') || descLow.includes('metrogas') || descLow.includes('luz') || descLow.includes('gas') || descLow.includes('agua') ? 'Servicios'
@@ -356,10 +358,23 @@ app.get('/mp-sync', async (req, res) => {
           : p.payment_type_id === 'bank_transfer' ? 'transferencia'
           : 'efectivo';
 
+        // Calcular monto real incluyendo comisiones de MP (fee_details)
+        // CSV: REAL_AMOUNT = TRANSACTION_AMOUNT + FEE_AMOUNT (ambos negativos en gastos)
+        // Para gastos: costo real = monto + comisión (lo que realmente salió del bolsillo)
+        // Para ingresos: monto neto = monto - comisión (lo que realmente entró después de que MP cobró)
+        // Para transferencias entre cuentas propias: sin comisión
+        const totalFees = (p.fee_details || []).reduce((sum, f) => sum + Math.abs(f.amount || 0), 0);
+        const baseAmount = Math.abs(p.transaction_amount);
+        const realAmount = type === 'transferencia'
+          ? baseAmount
+          : type === 'ingreso'
+            ? Math.max(0, baseAmount - totalFees) // ingreso neto luego de comisión MP
+            : baseAmount + totalFees;              // gasto real incluyendo comisión MP
+
         return {
           id: `mp_${p.id}`,
           date: p.date_approved?.split('T')[0] || p.date_created?.split('T')[0],
-          amount: Math.abs(p.transaction_amount),
+          amount: realAmount,
           description: desc,
           type,
           method,
