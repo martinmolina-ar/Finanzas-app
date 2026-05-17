@@ -1,6 +1,7 @@
 import React, { useState, useMemo, useEffect, useRef, useCallback } from 'react';
 import * as XLSX from 'xlsx';
 import { supabase } from './supabase';
+import { parseGaliciaXLSX, parseGaliciaPDF, type ParsedTx } from './galiciaParser';
 import { requestNotificationPermission, checkBudgetAlerts } from './notifications';
 import { AdBanner } from './AdBanner';
 import { UpgradeModal } from './UpgradeModal';
@@ -13,7 +14,7 @@ import {
   Calendar, Percent, BarChart3, Trash2, LogOut,
   Eye, EyeOff, Mail, Lock as LockIcon, Send, Moon, Bell, Camera,
   AlertTriangle, Filter, CreditCard, Banknote, PiggyBank, Target,
-  DollarSign, RefreshCw, Activity
+  DollarSign, RefreshCw, Activity, Upload
 } from 'lucide-react';
 
 // --- TIPOS ---
@@ -1422,6 +1423,12 @@ export default function App() {
   const [mpBalance, setMpBalance] = useState<number | null>(null);
   const [mpSelected, setMpSelected] = useState<Set<string>>(new Set());
   const [mpCardMapping, setMpCardMapping] = useState<Record<string, string>>({}); // cardKey → accountName
+  // ── Galicia import ──
+  const [importPreview, setImportPreview] = useState<ParsedTx[] | null>(null);
+  const [importSelected, setImportSelected] = useState<Set<string>>(new Set());
+  const [importParsing, setImportParsing] = useState(false);
+  const importFileRef = useRef<HTMLInputElement>(null);
+  const importTargetAccount = useRef<AccountItem | null>(null);
 
   const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3000';
 
@@ -1894,6 +1901,65 @@ export default function App() {
     }
     showToast('Cuenta guardada ✓');
     setShowAccountModal(false);
+  };
+
+  const handleFileImport = async (file: File, acc: AccountItem) => {
+    setImportParsing(true);
+    setSelectedAccountForAction(null);
+    try {
+      let parsed: ParsedTx[];
+      const isPDF = file.name.toLowerCase().endsWith('.pdf');
+      const isXLSX = file.name.toLowerCase().match(/\.xlsx?$/);
+      if (isPDF) {
+        parsed = await parseGaliciaPDF(file, acc.name);
+      } else if (isXLSX) {
+        parsed = await parseGaliciaXLSX(file, acc.name, acc.currency);
+      } else {
+        throw new Error('Formato no soportado. Usá PDF o XLSX.');
+      }
+      // Filter out already-imported transactions
+      const existingIds = new Set(transactions.map(t => t.id));
+      // Deduplicate by date+amount+description within the file
+      const seen = new Set<string>();
+      const newTxs = parsed.filter(p => {
+        const key = `${p.date}_${p.amount}_${p.description}`;
+        if (seen.has(key) || existingIds.has(p.id)) return false;
+        seen.add(key);
+        return true;
+      });
+      setImportPreview(newTxs);
+      setImportSelected(new Set(newTxs.map(t => t.id)));
+    } catch (e: any) {
+      alert(`Error al procesar el archivo: ${e.message}`);
+    }
+    setImportParsing(false);
+  };
+
+  const handleBankImport = async () => {
+    if (!importPreview?.length) return;
+    const toImport = importPreview.filter(p => importSelected.has(p.id));
+    if (!toImport.length) return;
+    const rows = toImport.map(p => ({
+      id: p.id, user_id: currentUser.id, amount: p.amount,
+      description: p.description, category: p.category,
+      account: p.account, method: p.method, type: p.type,
+      to_account: null, is_recurring: false,
+      income_type: p.type === 'ingreso' ? 'variable' : null,
+      date: p.date,
+    }));
+    await supabase.from('transactions').upsert(rows, { onConflict: 'id' });
+    const newTxObjs = toImport.map(p => ({
+      id: p.id, amount: p.amount, description: p.description,
+      category: p.category, account: p.account, method: p.method,
+      type: p.type, date: p.date, isRecurring: false,
+      incomeType: p.type === 'ingreso' ? 'variable' : undefined,
+    } as Transaction));
+    setTransactions(prev => {
+      const ids = new Set(prev.map(t => t.id));
+      return [...newTxObjs.filter(t => !ids.has(t.id)), ...prev];
+    });
+    setImportPreview(null);
+    showToast(`${toImport.length} movimientos importados ✓`);
   };
 
   const handleDeleteAccount = async (accId: string) => {
@@ -2757,6 +2823,17 @@ export default function App() {
                 </button>
               )
             )}
+            {/* Importar extracto Galicia */}
+            {(selectedAccountForAction.provider === 'Galicia' || selectedAccountForAction.name.toLowerCase().includes('galicia')) && (
+              <button
+                onClick={() => { importTargetAccount.current = selectedAccountForAction; importFileRef.current?.click(); }}
+                disabled={importParsing}
+                className="w-full py-3 bg-blue-50 rounded-2xl font-bold text-blue-700 flex items-center justify-center gap-2 mb-1"
+              >
+                <Upload size={16} />
+                {importParsing ? 'Procesando...' : 'Importar extracto / resumen'}
+              </button>
+            )}
             <button onClick={() => { openAccModal(selectedAccountForAction); setSelectedAccountForAction(null); }} className="w-full py-3 bg-gray-100 rounded-2xl font-bold text-gray-600 flex items-center justify-center gap-2"><Pencil size={16} /> Editar / Ajustar Saldo</button>
             {confirmDeleteAccountId === selectedAccountForAction?.id ? (
               <div className="mt-2 p-3 bg-red-50 rounded-2xl border border-red-200">
@@ -2770,6 +2847,90 @@ export default function App() {
               <button onClick={() => setConfirmDeleteAccountId(selectedAccountForAction?.id || null)} className="w-full py-3 bg-red-50 rounded-2xl font-bold text-red-500 flex items-center justify-center gap-2 text-sm mt-1">
                 <Trash2 size={15} /> Eliminar cuenta
               </button>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* ── INPUT OCULTO GALICIA ─────────────────────── */}
+      <input
+        type="file"
+        ref={importFileRef}
+        className="hidden"
+        accept=".pdf,.xlsx,.xls"
+        onChange={async (e) => {
+          const file = e.target.files?.[0];
+          const acc = importTargetAccount.current;
+          if (file && acc) await handleFileImport(file, acc);
+          e.target.value = '';
+        }}
+      />
+
+      {/* ── MODAL PREVIEW GALICIA ────────────────────── */}
+      {importPreview && (
+        <div className="fixed inset-0 z-[70] flex items-end sm:items-center justify-center sm:p-4 bg-black/60 backdrop-blur-sm">
+          <div className="bg-white rounded-t-3xl sm:rounded-3xl w-full sm:max-w-md max-h-[85vh] flex flex-col" onClick={e => e.stopPropagation()}>
+            <div className="p-5 border-b border-gray-100">
+              <div className="flex items-center justify-between mb-1">
+                <h3 className="text-lg font-bold">Importar movimientos</h3>
+                <button onClick={() => setImportPreview(null)} className="p-2 bg-gray-100 rounded-full"><X size={18} /></button>
+              </div>
+              {importPreview.length > 0 ? (
+                <div className="flex items-center justify-between mt-2">
+                  <p className="text-sm text-gray-500">{importSelected.size} de {importPreview.length} seleccionados</p>
+                  <button
+                    onClick={() => setImportSelected(
+                      importSelected.size === importPreview.length
+                        ? new Set()
+                        : new Set(importPreview.map(p => p.id))
+                    )}
+                    className="text-xs font-bold text-sky-600"
+                  >
+                    {importSelected.size === importPreview.length ? 'Deseleccionar todos' : 'Seleccionar todos'}
+                  </button>
+                </div>
+              ) : (
+                <p className="text-sm text-gray-400 mt-1">No hay movimientos nuevos para importar.</p>
+              )}
+            </div>
+            <div className="overflow-y-auto flex-1 p-4 space-y-2">
+              {importPreview.map(p => (
+                <div
+                  key={p.id}
+                  onClick={() => {
+                    const s = new Set(importSelected);
+                    s.has(p.id) ? s.delete(p.id) : s.add(p.id);
+                    setImportSelected(s);
+                  }}
+                  className={`flex items-center gap-3 p-3 rounded-2xl border cursor-pointer transition-colors ${importSelected.has(p.id) ? 'border-sky-300 bg-sky-50' : 'border-gray-100 bg-gray-50 opacity-50'}`}
+                >
+                  <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center flex-shrink-0 ${importSelected.has(p.id) ? 'bg-sky-500 border-sky-500' : 'border-gray-300'}`}>
+                    {importSelected.has(p.id) && <div className="w-2 h-2 bg-white rounded-full" />}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-semibold truncate">{p.description}</p>
+                    <p className="text-xs text-gray-400">{p.date} · {p.category} · {p.account}</p>
+                  </div>
+                  <div className="text-right flex-shrink-0">
+                    <p className={`text-sm font-bold ${p.type === 'ingreso' ? 'text-green-600' : p.type === 'transferencia' ? 'text-blue-600' : 'text-red-500'}`}>
+                      {p.type === 'ingreso' ? '+' : p.type === 'transferencia' ? '↔' : '-'}
+                      ${p.amount.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                    </p>
+                    <p className="text-[10px] text-gray-400 capitalize">{p.method}</p>
+                  </div>
+                </div>
+              ))}
+            </div>
+            {importPreview.length > 0 && (
+              <div className="p-4 border-t border-gray-100">
+                <button
+                  onClick={handleBankImport}
+                  disabled={importSelected.size === 0}
+                  className="w-full py-3 bg-sky-500 rounded-2xl font-bold text-white disabled:opacity-40"
+                >
+                  Importar {importSelected.size} movimiento{importSelected.size !== 1 ? 's' : ''}
+                </button>
+              </div>
             )}
           </div>
         </div>
