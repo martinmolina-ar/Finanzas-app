@@ -287,7 +287,7 @@ app.get('/mp-sync', async (req, res) => {
       0;
 
     const payments = (paymentsData.results || [])
-      .filter(p => ['approved', 'settled'].includes(p.status))
+      .filter(p => ['approved', 'settled'].includes(p.status) && Math.abs(p.transaction_amount) > 0)
       .map(p => ({
         id: `mp_${p.id}`,
         date: p.date_approved?.split('T')[0] || p.date_created?.split('T')[0],
