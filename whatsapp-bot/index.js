@@ -256,11 +256,12 @@ app.get('/mp-sync', async (req, res) => {
   const { user_id } = req.query;
   if (!user_id) return res.status(400).json({ error: 'user_id requerido' });
 
-  const { data: profile } = await supabase.from('profiles').select('mp_access_token, mp_user_id').eq('user_id', user_id).single();
+  const { data: profile } = await supabase.from('profiles').select('mp_access_token, mp_user_id, mp_dni').eq('user_id', user_id).single();
   if (!profile?.mp_access_token) return res.status(401).json({ error: 'MP no conectado' });
 
   const token = profile.mp_access_token;
   const mpUserId = String(profile.mp_user_id || '');
+  const myDni = profile.mp_dni || null; // DNI guardado en primer sync
 
   try {
     const endDate = new Date().toISOString();
@@ -339,31 +340,56 @@ app.get('/mp-sync', async (req, res) => {
           : descLow.includes('correo') || descLow.includes('andreani') || descLow.includes('oca ') ? 'Transporte'
           : 'Varios';
 
+        const card = p.card || {};
+        const cardLastFour = card.last_four_digits || null;
+        const cardMethod = p.payment_method_id || null; // visa, mastercard, amex
+        const cardHolderDni = card.cardholder?.identification?.number || null;
+        // Es mi tarjeta si el DNI del titular coincide con el del usuario conectado
+        const isOwnCard = !cardHolderDni || cardHolderDni === myDni;
+
+        const method = p.payment_type_id === 'credit_card' ? 'credito'
+          : p.payment_type_id === 'debit_card' ? 'debito'
+          : p.payment_type_id === 'bank_transfer' ? 'transferencia'
+          : 'efectivo';
+
         return {
           id: `mp_${p.id}`,
           date: p.date_approved?.split('T')[0] || p.date_created?.split('T')[0],
           amount: Math.abs(p.transaction_amount),
           description: desc,
           type,
-          method: p.payment_type_id === 'credit_card' ? 'credito'
-                  : p.payment_type_id === 'debit_card' ? 'debito'
-                  : p.payment_type_id === 'bank_transfer' ? 'transferencia'
-                  : 'efectivo',
+          method,
           category,
+          // Info para que el frontend asigne la cuenta correcta
+          cardLastFour,
+          cardMethod,
+          isOwnCard,
+          paymentType: p.payment_type_id, // account_money, credit_card, bank_transfer
         };
       });
 
-    const sampleP = paymentsData.results?.[0];
-    res.json({
-      payments, balance, total: payments.length,
-      _debug: {
-        myMpId,
-        samplePayerId: sampleP?.payer?.id,
-        sampleCollectorId: sampleP?.collector?.id,
-        sampleAmount: sampleP?.transaction_amount,
-        sampleDesc: sampleP?.description,
+    // Auto-detectar DNI del usuario si no lo tenemos guardado
+    let detectedDni = myDni;
+    if (!detectedDni) {
+      const dniCount = {};
+      for (const p of paymentsData.results || []) {
+        const dni = p.card?.cardholder?.identification?.number;
+        if (dni) dniCount[dni] = (dniCount[dni] || 0) + 1;
       }
-    });
+      detectedDni = Object.entries(dniCount).sort((a,b) => b[1]-a[1])[0]?.[0] || null;
+      if (detectedDni) {
+        await supabase.from('profiles').update({ mp_dni: detectedDni }).eq('user_id', user_id);
+      }
+    }
+    // Recalcular isOwnCard con el DNI detectado
+    const finalPayments = payments.map(p => ({
+      ...p,
+      isOwnCard: p.paymentType === 'credit_card' || p.paymentType === 'debit_card'
+        ? (p.isOwnCard || false)
+        : true, // account_money y bank_transfer siempre son del usuario
+    }));
+
+    res.json({ payments: finalPayments, balance, total: finalPayments.length });
   } catch (err) {
     console.error('MP sync error:', err);
     res.status(500).json({ error: err.message });
