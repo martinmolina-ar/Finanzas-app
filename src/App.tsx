@@ -49,6 +49,7 @@ interface AccountItem {
   limit?: number;
   type: AccountType;
   currency: Currency;
+  lastFour?: string;
 }
 
 interface Budget {
@@ -1226,10 +1227,11 @@ const HabitsView = ({
   const [form, setForm] = useState<{ name: string; emoji: string; color: string; frequency: 'daily' | 'weekly' }>({ name: '', emoji: '✅', color: '#10B981', frequency: 'daily' });
   const today = new Date().toISOString().split('T')[0];
 
+  const DAY_LABELS = ['Dom', 'Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb'];
   const last7 = Array.from({ length: 7 }, (_, i) => {
     const d = new Date();
     d.setDate(d.getDate() - (6 - i));
-    return d.toISOString().split('T')[0];
+    return { date: d.toISOString().split('T')[0], label: DAY_LABELS[d.getDay()] };
   });
 
   const getStreak = (habitId: string) => {
@@ -1292,17 +1294,20 @@ const HabitsView = ({
                   >
                     {completedToday ? '✅' : habit.emoji}
                   </button>
-                  <div className="flex-1">
-                    <p className="font-bold">{habit.name}</p>
-                    <div className="flex items-center gap-3 mt-1">
-                      {streak > 0 && <span className="text-xs font-bold text-orange-500 flex items-center gap-1"><Flame size={12} /> {streak} días</span>}
-                      <div className="flex gap-1">
-                        {last7.map(date => (
-                          <div key={date} className="w-5 h-5 rounded-full flex items-center justify-center" style={{ backgroundColor: isCompleted(habit.id, date) ? habit.color : '#F3F4F6' }}>
-                            {isCompleted(habit.id, date) && <span className="text-white text-[8px] font-bold">✓</span>}
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2">
+                      <p className="font-bold">{habit.name}</p>
+                      {streak > 0 && <span className="text-xs font-bold text-orange-500 flex items-center gap-1"><Flame size={11} /> {streak}d</span>}
+                    </div>
+                    <div className="flex gap-1 mt-2">
+                      {last7.map(({ date, label }) => (
+                        <button key={date} onClick={() => onToggle(habit.id, date)} className="flex flex-col items-center gap-0.5 active:scale-90 transition-transform">
+                          <div className="w-7 h-7 rounded-full flex items-center justify-center transition-colors" style={{ backgroundColor: isCompleted(habit.id, date) ? habit.color : '#F3F4F6' }}>
+                            {isCompleted(habit.id, date) && <span className="text-white text-[9px] font-bold">✓</span>}
                           </div>
-                        ))}
-                      </div>
+                          <span className="text-[9px] font-bold" style={{ color: date === today ? '#6366F1' : '#9CA3AF' }}>{label}</span>
+                        </button>
+                      ))}
                     </div>
                   </div>
                   <button onClick={() => onDelete(habit.id)} className="p-2 text-gray-300 hover:text-red-400 transition-colors"><Trash2 size={16} /></button>
@@ -1410,13 +1415,127 @@ export default function App() {
   const [selectedAccountForAction, setSelectedAccountForAction] = useState<AccountItem | null>(null);
   const [settings, setSettings] = useState({ notifications: false, darkMode: false });
   const [notifPermission, setNotifPermission] = useState<NotificationPermission>('default');
-  const [userPlan, setUserPlan] = useState({ noAds: false, whatsappActive: false });
+  const [userPlan, setUserPlan] = useState({ noAds: false, whatsappActive: false, mpConnected: false });
   const [showUpgradeModal, setShowUpgradeModal] = useState(false);
+  const [mpSyncing, setMpSyncing] = useState(false);
+  const [mpPreview, setMpPreview] = useState<any[] | null>(null);
+  const [mpBalance, setMpBalance] = useState<number | null>(null);
+  const [mpSelected, setMpSelected] = useState<Set<string>>(new Set());
+  const [mpCardMapping, setMpCardMapping] = useState<Record<string, string>>({}); // cardKey → accountName
+
+  const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3000';
+
+  const handleMpConnect = () => {
+    window.location.href = `${BACKEND_URL}/mp-auth?user_id=${currentUser.id}`;
+  };
+
+  const handleMpDisconnect = async () => {
+    await fetch(`${BACKEND_URL}/mp-disconnect`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ user_id: currentUser.id }) });
+    setUserPlan(p => ({ ...p, mpConnected: false }));
+    showToast('Mercado Pago desconectado');
+  };
+
+  const handleMpSync = async (accountName: string) => {
+    setMpSyncing(true);
+    try {
+      const res = await fetch(`${BACKEND_URL}/mp-sync?user_id=${currentUser.id}`);
+      if (!res.ok) throw new Error('Error al conectar con Mercado Pago');
+      const data = await res.json();
+      if (data.error) throw new Error(data.error);
+      // Filtrar los que ya existen en transacciones (por id mp_XXXX)
+      const existingIds = new Set(transactions.map(t => t.id));
+      const newTxs = (data.payments || []).filter((p: any) => !existingIds.has(p.id) && p.date);
+      const preview = newTxs.map((p: any) => {
+        // Determinar cuenta según medio de pago
+        let account = accountName; // default: MP
+        if (p.paymentType === 'bank_transfer') {
+          // Buscar cuenta Galicia en ARS (excluir USD)
+          const galicia = accountsList.find(a => a.name.toLowerCase().includes('galicia') && a.currency !== 'USD')
+            || accountsList.find(a => a.name.toLowerCase().includes('galicia'));
+          if (galicia) account = galicia.name;
+        } else if ((p.paymentType === 'credit_card' || p.paymentType === 'debit_card') && p.cardLastFour) {
+          // 1. Campo lastFour dedicado (más preciso)
+          const matchedByField = accountsList.find(a => a.lastFour === p.cardLastFour);
+          // 2. Últimos 4 en el nombre (compatibilidad)
+          const matchedByName = accountsList.find(a => a.name.includes(p.cardLastFour));
+          const matched = matchedByField || matchedByName;
+          if (matched) account = matched.name;
+          else {
+            const byBrand = accountsList.find(a => a.name.toLowerCase().includes(p.cardMethod?.toLowerCase() || ''));
+            if (byBrand) account = byBrand.name;
+          }
+        }
+        return { ...p, account };
+      });
+      setMpPreview(preview);
+      // Auto-destildar pagos con tarjeta ajena (isOwnCard === false)
+      setMpSelected(new Set(preview.filter((p: any) => p.isOwnCard !== false).map((p: any) => p.id)));
+      setMpBalance(data.balance);
+      // Detectar tarjetas sin cuenta asignada
+      const unmatched: Record<string, string> = {};
+      preview.forEach((p: any) => {
+        if (p.cardLastFour && p.isOwnCard !== false) {
+          const key = `${p.cardMethod?.toUpperCase() || 'TARJETA'} ****${p.cardLastFour}`;
+          const hasAccount = accountsList.some(a => a.lastFour === p.cardLastFour || a.name.includes(p.cardLastFour));
+          if (!hasAccount) unmatched[key] = accountName;
+        }
+      });
+      setMpCardMapping(unmatched);
+    } catch (e: any) {
+      showToast(e.message || 'Error al sincronizar MP', 'error');
+    } finally {
+      setMpSyncing(false);
+    }
+  };
+
+  const handleMpImport = async () => {
+    if (!mpPreview?.length) return;
+    const toImport = mpPreview.filter(p => mpSelected.has(p.id)).slice(0, 100).map((p: any) => {
+      // Aplicar card mapping si corresponde
+      if (p.cardLastFour) {
+        const cardKey = `${p.cardMethod?.toUpperCase() || 'TARJETA'} ****${p.cardLastFour}`;
+        if (mpCardMapping[cardKey]) return { ...p, account: mpCardMapping[cardKey] };
+      }
+      return p;
+    });
+    const rows = toImport.map((p: any) => ({
+      id: p.id, user_id: currentUser.id, amount: p.amount,
+      description: p.description, category: p.category,
+      account: p.account, method: p.method, type: p.type,
+      to_account: null, is_recurring: false, income_type: p.type === 'ingreso' ? 'variable' : null, date: p.date
+    }));
+    await supabase.from('transactions').upsert(rows, { onConflict: 'id' });
+    const newTxObjs = toImport.map((p: any) => ({
+      id: p.id, amount: p.amount, description: p.description, category: p.category,
+      account: p.account, method: p.method, type: p.type, date: p.date,
+      isRecurring: false, incomeType: p.type === 'ingreso' ? 'variable' : undefined
+    } as Transaction));
+    setTransactions(prev => {
+      const existingIds = new Set(prev.map(t => t.id));
+      return [...newTxObjs.filter(t => !existingIds.has(t.id)), ...prev];
+    });
+    // Actualizar saldo de la cuenta si tenemos balance real
+    if (mpBalance !== null) {
+      const acc = accountsList.find(a => a.name === mpPreview[0]?.account);
+      if (acc) {
+        const income = [...transactions, ...newTxObjs].filter(t => t.type === 'ingreso' && t.account === acc.name).reduce((s,t) => s+t.amount, 0);
+        const expense = [...transactions, ...newTxObjs].filter(t => t.type === 'gasto' && t.account === acc.name).reduce((s,t) => s+t.amount, 0);
+        const transferOut = [...transactions, ...newTxObjs].filter(t => t.type === 'transferencia' && t.account === acc.name).reduce((s,t) => s+t.amount, 0);
+        const transferIn = [...transactions, ...newTxObjs].filter(t => t.type === 'transferencia' && t.toAccount === acc.name).reduce((s,t) => s+t.amount, 0);
+        const newInitial = mpBalance - income + expense + transferOut - transferIn;
+        await supabase.from('accounts').update({ initial_balance: newInitial }).eq('id', acc.id);
+        setAccountsList(prev => prev.map(a => a.id === acc.id ? { ...a, initialBalance: newInitial } : a));
+      }
+    }
+    setMpPreview(null);
+    showToast(`${toImport.length} movimientos importados de MP ✓`);
+  };
   const [dolarRates, setDolarRates] = useState<DolarRates | null>(null);
   const [dolarLoading, setDolarLoading] = useState(false);
   const [activityFilter, setActivityFilter] = useState({ search: '' });
 
-  const [accForm, setAccForm] = useState({ id: '', name: '', provider: 'Default', balance: '', type: 'gastos' as AccountType, limit: '', currency: 'ARS' as Currency, emoji: '' });
+  const [accForm, setAccForm] = useState({ id: '', name: '', provider: 'Default', balance: '', type: 'gastos' as AccountType, limit: '', currency: 'ARS' as Currency, emoji: '', lastFour: '' });
+  const [confirmDeleteAccountId, setConfirmDeleteAccountId] = useState<string | null>(null);
   const [transForm, setTransForm] = useState({
     id: '', amount: '', description: '', type: 'gasto' as TransactionType,
     category: 'Comida', account: '', toAccount: '', method: 'debito' as PaymentMethod,
@@ -1516,15 +1635,15 @@ export default function App() {
         supabase.from('habit_logs').select('*').eq('user_id', currentUser.id),
       ]);
       if (txs) setTransactions(txs.map((t: any) => ({ id: t.id, amount: t.amount, description: t.description, category: t.category, account: t.account, toAccount: t.to_account, method: t.method, type: t.type, incomeType: t.income_type, isRecurring: t.is_recurring, date: t.date })));
-      if (accs) setAccountsList(accs.map((a: any) => ({ id: a.id, name: a.name, provider: a.provider, initialBalance: a.initial_balance, limit: a.limit_amount, type: a.type, currency: a.currency })));
+      if (accs) setAccountsList(accs.map((a: any) => ({ id: a.id, name: a.name, provider: a.provider, initialBalance: a.initial_balance, limit: a.limit_amount, type: a.type, currency: a.currency, lastFour: a.last_four || undefined })));
       if (buds) setBudgets(buds.map((b: any) => ({ category: b.category, limit: b.limit_amount })));
       if (dts) setDebts(dts.map((d: any) => ({ id: d.id, person: d.person, concept: d.concept || '', originalAmount: d.original_amount, remainingAmount: d.remaining_amount, type: d.type, date: d.date, currency: d.currency })));
       if (hbts) setHabits(hbts.map((h: any) => ({ id: h.id, name: h.name, emoji: h.emoji, color: h.color, frequency: h.frequency, createdAt: h.created_at })));
       if (hlogs) setHabitLogs(hlogs.map((l: any) => ({ id: l.id, habitId: l.habit_id, date: l.date })));
       // Cargar plan
-      const { data: profile } = await supabase.from('profiles').select('no_ads, whatsapp_active, phone').eq('user_id', currentUser.id).single();
+      const { data: profile } = await supabase.from('profiles').select('no_ads, whatsapp_active, phone, mp_access_token').eq('user_id', currentUser.id).single();
       if (profile) {
-        setUserPlan({ noAds: profile.no_ads || false, whatsappActive: profile.whatsapp_active || false });
+        setUserPlan({ noAds: profile.no_ads || false, whatsappActive: profile.whatsapp_active || false, mpConnected: !!profile.mp_access_token });
         if (profile.phone) setCurrentUser((u: any) => ({ ...u, phone: profile.phone }));
       }
       // Cargar customizaciones desde user_metadata (no requiere columnas extra en DB)
@@ -1569,7 +1688,7 @@ export default function App() {
     if ('Notification' in window) setNotifPermission(Notification.permission);
   }, []);
 
-  // Manejar redirect de Stripe
+  // Manejar redirects de Stripe y Mercado Pago
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const payment = params.get('payment');
@@ -1577,6 +1696,15 @@ export default function App() {
     if (payment === 'success') {
       if (type === 'no_ads') setUserPlan(p => ({ ...p, noAds: true }));
       if (type === 'whatsapp') setUserPlan(p => ({ ...p, whatsappActive: true }));
+      window.history.replaceState({}, '', window.location.pathname);
+    }
+    if (params.get('mp_connected') === 'true') {
+      setUserPlan(p => ({ ...p, mpConnected: true }));
+      showToast('✅ Mercado Pago conectado correctamente');
+      window.history.replaceState({}, '', window.location.pathname);
+    }
+    if (params.get('mp_error')) {
+      showToast(`Error al conectar MP: ${params.get('mp_error')}`, 'error');
       window.history.replaceState({}, '', window.location.pathname);
     }
   }, []);
@@ -1734,8 +1862,9 @@ export default function App() {
         const transferIn = transactions.filter(t => t.type === 'transferencia' && t.toAccount === old.name).reduce((s, t) => s + t.amount, 0);
         newInitialBalance = newBal - income + expense + transferOut - transferIn;
       }
-      await supabase.from('accounts').update({ name: accForm.name, provider: accForm.provider, type: accForm.type, currency: accForm.currency, initial_balance: newInitialBalance, limit_amount: accForm.limit ? parseInput(accForm.limit) : null }).eq('id', accForm.id);
-      setAccountsList(accountsList.map(a => a.id === accForm.id ? { ...a, name: accForm.name, provider: accForm.provider, type: accForm.type, currency: accForm.currency, initialBalance: newInitialBalance, limit: parseInput(accForm.limit) } : a));
+      const lastFourClean = accForm.lastFour.replace(/\D/g, '').slice(0, 4) || null;
+      await supabase.from('accounts').update({ name: accForm.name, provider: accForm.provider, type: accForm.type, currency: accForm.currency, initial_balance: newInitialBalance, limit_amount: accForm.limit ? parseInput(accForm.limit) : null, last_four: lastFourClean }).eq('id', accForm.id);
+      setAccountsList(accountsList.map(a => a.id === accForm.id ? { ...a, name: accForm.name, provider: accForm.provider, type: accForm.type, currency: accForm.currency, initialBalance: newInitialBalance, limit: parseInput(accForm.limit), lastFour: lastFourClean || undefined } : a));
       // Guardar emoji personalizado en localStorage + Supabase
       const updatedAccEmojis = { ...customAccountEmojis, [accForm.id]: accForm.emoji };
       if (!accForm.emoji) delete updatedAccEmojis[accForm.id];
@@ -1746,8 +1875,9 @@ export default function App() {
       const parsedInitialBal = accForm.type === 'credito' && accForm.limit
         ? parseInput(accForm.balance) - parseInput(accForm.limit) // available → actual (negative)
         : parseInput(accForm.balance);
-      const newAcc = { ...accForm, id: Date.now().toString(), initialBalance: parsedInitialBal, limit: accForm.limit ? parseInput(accForm.limit) : undefined };
-      await supabase.from('accounts').insert({ id: newAcc.id, user_id: currentUser.id, name: newAcc.name, provider: newAcc.provider, initial_balance: newAcc.initialBalance, limit_amount: newAcc.limit || null, type: newAcc.type, currency: newAcc.currency });
+      const lastFourClean = accForm.lastFour.replace(/\D/g, '').slice(0, 4) || null;
+      const newAcc = { ...accForm, id: Date.now().toString(), initialBalance: parsedInitialBal, limit: accForm.limit ? parseInput(accForm.limit) : undefined, lastFour: lastFourClean || undefined };
+      await supabase.from('accounts').insert({ id: newAcc.id, user_id: currentUser.id, name: newAcc.name, provider: newAcc.provider, initial_balance: newAcc.initialBalance, limit_amount: newAcc.limit || null, type: newAcc.type, currency: newAcc.currency, last_four: lastFourClean });
       setAccountsList([...accountsList, newAcc]);
       if (accForm.emoji) {
         const updatedAccEmojis = { ...customAccountEmojis, [newAcc.id]: accForm.emoji };
@@ -1758,6 +1888,14 @@ export default function App() {
     }
     showToast('Cuenta guardada ✓');
     setShowAccountModal(false);
+  };
+
+  const handleDeleteAccount = async (accId: string) => {
+    await supabase.from('accounts').delete().eq('id', accId);
+    setAccountsList(prev => prev.filter(a => a.id !== accId));
+    setConfirmDeleteAccountId(null);
+    setSelectedAccountForAction(null);
+    showToast('Cuenta eliminada');
   };
 
   const openTxModal = (tx?: Transaction, type: TransactionType = 'gasto', accountName?: string, toAccountName?: string) => {
@@ -1776,9 +1914,9 @@ export default function App() {
       const displayBalance = acc.type === 'credito' && acc.limit != null
         ? fmtARS(acc.limit + acc.current) // available = limit - debt (current is negative)
         : fmtARS(acc.current);
-      setAccForm({ id: acc.id, name: acc.name, provider: acc.provider, balance: displayBalance, type: acc.type, limit: acc.limit ? fmtARS(acc.limit) : '', currency: acc.currency, emoji: customAccountEmojis[acc.id] || '' });
+      setAccForm({ id: acc.id, name: acc.name, provider: acc.provider, balance: displayBalance, type: acc.type, limit: acc.limit ? fmtARS(acc.limit) : '', currency: acc.currency, emoji: customAccountEmojis[acc.id] || '', lastFour: acc.lastFour || '' });
     } else {
-      setAccForm({ id: '', name: '', provider: 'Default', balance: '', type: 'gastos', limit: '', currency: 'ARS', emoji: '' });
+      setAccForm({ id: '', name: '', provider: 'Default', balance: '', type: 'gastos', limit: '', currency: 'ARS', emoji: '', lastFour: '' });
     }
     setShowAccountModal(true);
   };
@@ -2522,6 +2660,17 @@ export default function App() {
                   ))}
                 </div>
               </div>
+              {(accForm.type === 'credito' || accForm.type === 'gastos') && (
+                <div>
+                  <label className="text-[10px] font-bold text-gray-400 uppercase ml-1">Últimos 4 dígitos de la tarjeta <span className="text-gray-300 normal-case">(para matching con MP)</span></label>
+                  <input
+                    type="text" inputMode="numeric" maxLength={4} placeholder="ej: 7960"
+                    value={accForm.lastFour}
+                    onChange={e => setAccForm({ ...accForm, lastFour: e.target.value.replace(/\D/g, '').slice(0, 4) })}
+                    className="w-full bg-gray-50 p-3 rounded-xl border mt-1 tracking-widest font-mono"
+                  />
+                </div>
+              )}
               {accForm.type === 'credito' && (
                 <div><label className="text-[10px] font-bold text-gray-400 uppercase ml-1">Límite de la Tarjeta</label><input type="text" inputMode="decimal" placeholder="0" value={accForm.limit} onChange={e => setAccForm({ ...accForm, limit: formatInput(e.target.value) })} className="w-full bg-gray-50 p-3 rounded-xl border mt-1" /></div>
               )}
@@ -2553,9 +2702,9 @@ export default function App() {
 
       {/* ── MODAL ACCIÓN CUENTA ───────────────────────── */}
       {selectedAccountForAction && (
-        <div className="fixed inset-0 z-[60] flex items-end sm:items-center justify-center sm:p-4 bg-black/50 backdrop-blur-sm" onClick={() => setSelectedAccountForAction(null)}>
+        <div className="fixed inset-0 z-[60] flex items-end sm:items-center justify-center sm:p-4 bg-black/50 backdrop-blur-sm" onClick={() => { setSelectedAccountForAction(null); setConfirmDeleteAccountId(null); }}>
           <div className="bg-white rounded-t-3xl sm:rounded-3xl p-6 w-full sm:max-w-sm" onClick={e => e.stopPropagation()}>
-            <div className="flex items-center justify-between mb-5"><h3 className="text-xl font-bold">{selectedAccountForAction.name}</h3><button onClick={() => setSelectedAccountForAction(null)} className="p-2 bg-gray-100 rounded-full"><X size={18} /></button></div>
+            <div className="flex items-center justify-between mb-5"><h3 className="text-xl font-bold">{selectedAccountForAction.name}</h3><button onClick={() => { setSelectedAccountForAction(null); setConfirmDeleteAccountId(null); }} className="p-2 bg-gray-100 rounded-full"><X size={18} /></button></div>
             {selectedAccountForAction.type === 'ahorro' && (
               <div className="flex items-center gap-2 mb-3 bg-amber-50 rounded-2xl px-3 py-2">
                 <PiggyBank size={14} className="text-amber-600" />
@@ -2582,7 +2731,114 @@ export default function App() {
                 <CreditCard size={16} /> Pagar tarjeta
               </button>
             )}
+            {(selectedAccountForAction.provider === 'Mercado Pago' || selectedAccountForAction.name.toLowerCase().includes('mercado pago') || selectedAccountForAction.name.toLowerCase().includes('mercadopago')) && (
+              userPlan.mpConnected ? (
+                <div className="flex gap-2 mb-2">
+                  <button onClick={() => { handleMpSync(selectedAccountForAction.name); setSelectedAccountForAction(null); }}
+                    className="flex-1 py-3 bg-sky-50 rounded-2xl font-bold text-sky-700 flex items-center justify-center gap-2">
+                    <RefreshCw size={16} className={mpSyncing ? 'animate-spin' : ''} />
+                    {mpSyncing ? 'Sincronizando...' : 'Sincronizar'}
+                  </button>
+                  <button onClick={() => { handleMpDisconnect(); setSelectedAccountForAction(null); }}
+                    className="py-3 px-4 bg-red-50 rounded-2xl font-bold text-red-500 text-sm">
+                    Desconectar
+                  </button>
+                </div>
+              ) : (
+                <button onClick={() => { setSelectedAccountForAction(null); handleMpConnect(); }}
+                  className="w-full py-3 bg-sky-500 rounded-2xl font-bold text-white flex items-center justify-center gap-2 mb-2">
+                  🔗 Conectar con Mercado Pago
+                </button>
+              )
+            )}
             <button onClick={() => { openAccModal(selectedAccountForAction); setSelectedAccountForAction(null); }} className="w-full py-3 bg-gray-100 rounded-2xl font-bold text-gray-600 flex items-center justify-center gap-2"><Pencil size={16} /> Editar / Ajustar Saldo</button>
+            {confirmDeleteAccountId === selectedAccountForAction?.id ? (
+              <div className="mt-2 p-3 bg-red-50 rounded-2xl border border-red-200">
+                <p className="text-xs text-red-700 font-bold mb-2 text-center">⚠️ ¿Eliminar "{selectedAccountForAction?.name}"? Esta acción no se puede deshacer.</p>
+                <div className="flex gap-2">
+                  <button onClick={() => setConfirmDeleteAccountId(null)} className="flex-1 py-2 bg-white border border-gray-200 rounded-xl text-sm font-bold text-gray-600">Cancelar</button>
+                  <button onClick={() => handleDeleteAccount(selectedAccountForAction!.id)} className="flex-1 py-2 bg-red-500 rounded-xl text-sm font-bold text-white">Sí, eliminar</button>
+                </div>
+              </div>
+            ) : (
+              <button onClick={() => setConfirmDeleteAccountId(selectedAccountForAction?.id || null)} className="w-full py-3 bg-red-50 rounded-2xl font-bold text-red-500 flex items-center justify-center gap-2 text-sm mt-1">
+                <Trash2 size={15} /> Eliminar cuenta
+              </button>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* ── MODAL PREVIEW MP ─────────────────────────── */}
+      {mpPreview && (
+        <div className="fixed inset-0 z-[70] flex items-end sm:items-center justify-center sm:p-4 bg-black/60 backdrop-blur-sm">
+          <div className="bg-white rounded-t-3xl sm:rounded-3xl w-full sm:max-w-md max-h-[85vh] flex flex-col" onClick={e => e.stopPropagation()}>
+            <div className="p-5 border-b border-gray-100">
+              <div className="flex items-center justify-between mb-1">
+                <h3 className="text-lg font-bold">Sincronizar Mercado Pago</h3>
+                <button onClick={() => setMpPreview(null)} className="p-2 bg-gray-100 rounded-full"><X size={18} /></button>
+              </div>
+              {mpPreview.length > 0 && (
+                <div className="flex items-center justify-between mt-2">
+                  <p className="text-sm text-gray-500">{mpSelected.size} de {mpPreview.length} seleccionados</p>
+                  <button onClick={() => setMpSelected(mpSelected.size === mpPreview.length ? new Set() : new Set(mpPreview.map(p => p.id)))}
+                    className="text-xs font-bold text-sky-600">
+                    {mpSelected.size === mpPreview.length ? 'Deseleccionar todos' : 'Seleccionar todos'}
+                  </button>
+                </div>
+              )}
+              {Object.keys(mpCardMapping).length > 0 && (
+                <div className="mt-3 space-y-2">
+                  {Object.entries(mpCardMapping).map(([cardKey, assignedAccount]) => (
+                    <div key={cardKey} className="bg-amber-50 border border-amber-200 rounded-xl px-3 py-2">
+                      <p className="text-xs font-bold text-amber-700 mb-1">⚠️ {cardKey} no tiene cuenta creada</p>
+                      <div className="flex items-center gap-2">
+                        <p className="text-xs text-amber-600 flex-shrink-0">Imputar a:</p>
+                        <select value={assignedAccount}
+                          onChange={e => setMpCardMapping(prev => ({ ...prev, [cardKey]: e.target.value }))}
+                          className="flex-1 text-xs border border-amber-300 rounded-lg px-2 py-1 bg-white">
+                          {accountsList.map(a => <option key={a.id} value={a.name}>{a.name}</option>)}
+                        </select>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+            {mpPreview.length === 0 && (
+              <p className="text-sm text-gray-500 text-center py-8">No hay movimientos nuevos para importar.</p>
+            )}
+            {mpPreview.length > 0 && (
+              <div className="overflow-y-auto flex-1 px-4 py-3 space-y-2">
+                {mpPreview.map((p: any) => {
+                  const selected = mpSelected.has(p.id);
+                  return (
+                    <div key={p.id} onClick={() => setMpSelected(prev => { const s = new Set(prev); selected ? s.delete(p.id) : s.add(p.id); return s; })}
+                      className={`flex items-center gap-3 rounded-xl px-3 py-2 cursor-pointer transition-colors ${selected ? 'bg-sky-50 border border-sky-200' : 'bg-gray-50 opacity-50'}`}>
+                      <div className={`w-5 h-5 rounded-full flex-shrink-0 flex items-center justify-center border-2 ${selected ? 'bg-sky-500 border-sky-500' : 'border-gray-300'}`}>
+                        {selected && <span className="text-white text-[10px] font-bold">✓</span>}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-semibold text-gray-800 truncate">{p.description}</p>
+                        <p className="text-xs text-gray-400">{p.date} · {p.category} · {p.account}</p>
+                        {p.isOwnCard === false && <p className="text-[10px] text-orange-500 font-bold">⚠️ Tarjeta ajena</p>}
+                      </div>
+                      <span className={`text-sm font-bold whitespace-nowrap ${p.type === 'ingreso' ? 'text-emerald-600' : p.type === 'gasto' ? 'text-red-500' : 'text-blue-500'}`}>
+                        {p.type === 'ingreso' ? '+' : p.type === 'gasto' ? '-' : '↔'} {fmtARS(p.amount)}
+                      </span>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+            <div className="p-4 border-t border-gray-100 flex gap-3">
+              <button onClick={() => setMpPreview(null)} className="flex-1 py-3 bg-gray-100 rounded-2xl font-bold text-gray-600">Cancelar</button>
+              {mpSelected.size > 0 && (
+                <button onClick={handleMpImport} className="flex-1 py-3 bg-sky-500 rounded-2xl font-bold text-white">
+                  Importar {mpSelected.size > 100 ? '100' : mpSelected.size}
+                </button>
+              )}
+            </div>
           </div>
         </div>
       )}
