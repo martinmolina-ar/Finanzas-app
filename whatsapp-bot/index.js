@@ -185,7 +185,56 @@ app.post('/webhook', async (req, res) => {
   reply(`${emoji} *${tx.description}*\n${sign} $${tx.amount.toLocaleString()} · ${tx.category}\n📅 ${date} · ${tx.account}\n\n_Guardado en FinanzasApp_`);
 });
 
-app.get('/health', (_, res) => res.json({ ok: true, env: { supabase: !!process.env.SUPABASE_URL, anthropic: !!process.env.ANTHROPIC_API_KEY, stripe: !!process.env.STRIPE_SECRET_KEY } }));
+// ─── MERCADO PAGO SYNC ─────────────────────────────────────────
+
+app.get('/mp-sync', async (req, res) => {
+  const token = process.env.MP_ACCESS_TOKEN;
+  if (!token) return res.status(500).json({ error: 'MP_ACCESS_TOKEN no configurado en Railway' });
+
+  try {
+    const endDate = new Date().toISOString();
+    const startDate = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000).toISOString();
+
+    const [paymentsRes, balanceRes] = await Promise.all([
+      fetch(`https://api.mercadopago.com/v1/payments/search?sort=date_created&criteria=desc&range=date_created&begin_date=${startDate}&end_date=${endDate}&limit=100&status=approved`, {
+        headers: { 'Authorization': `Bearer ${token}` }
+      }),
+      fetch('https://api.mercadopago.com/v1/account/balance', {
+        headers: { 'Authorization': `Bearer ${token}` }
+      })
+    ]);
+
+    const [paymentsData, balanceData] = await Promise.all([paymentsRes.json(), balanceRes.json()]);
+
+    const payments = (paymentsData.results || []).map(p => ({
+      id: `mp_${p.id}`,
+      date: p.date_approved?.split('T')[0] || p.date_created?.split('T')[0],
+      amount: Math.abs(p.transaction_amount),
+      description: p.description || p.payment_method_id || 'Mercado Pago',
+      type: p.operation_type === 'regular_payment' && p.payer?.id == p.collector?.id ? 'transferencia'
+            : p.operation_type === 'money_transfer' ? 'transferencia'
+            : p.transaction_amount > 0 ? 'ingreso' : 'gasto',
+      method: p.payment_type_id === 'credit_card' ? 'credito'
+              : p.payment_type_id === 'debit_card' ? 'debito'
+              : p.payment_type_id === 'account_money' ? 'transferencia' : 'efectivo',
+      category: p.operation_type === 'money_transfer' ? 'Transferencia'
+                : p.transaction_amount > 0 ? 'Ventas' : 'Varios',
+      rawStatus: p.status,
+      rawType: p.operation_type,
+    }));
+
+    res.json({
+      payments,
+      balance: balanceData.available_balance ?? balanceData.total_amount ?? 0,
+      total: paymentsData.paging?.total || payments.length,
+    });
+  } catch (err) {
+    console.error('MP sync error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.get('/health', (_, res) => res.json({ ok: true, env: { supabase: !!process.env.SUPABASE_URL, anthropic: !!process.env.ANTHROPIC_API_KEY, stripe: !!process.env.STRIPE_SECRET_KEY, mp: !!process.env.MP_ACCESS_TOKEN } }));
 
 // Error handler global
 app.use((err, req, res, next) => {
