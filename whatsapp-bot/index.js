@@ -256,10 +256,11 @@ app.get('/mp-sync', async (req, res) => {
   const { user_id } = req.query;
   if (!user_id) return res.status(400).json({ error: 'user_id requerido' });
 
-  const { data: profile } = await supabase.from('profiles').select('mp_access_token').eq('user_id', user_id).single();
+  const { data: profile } = await supabase.from('profiles').select('mp_access_token, mp_user_id').eq('user_id', user_id).single();
   if (!profile?.mp_access_token) return res.status(401).json({ error: 'MP no conectado' });
 
   const token = profile.mp_access_token;
+  const mpUserId = String(profile.mp_user_id || '');
 
   try {
     const endDate = new Date().toISOString();
@@ -289,26 +290,40 @@ app.get('/mp-sync', async (req, res) => {
     const payments = (paymentsData.results || [])
       .filter(p => ['approved', 'settled'].includes(p.status) && Math.abs(p.transaction_amount) > 0)
       .map(p => {
+        const payerId = String(p.payer?.id || '');
+        const collectorId = String(p.collector?.id || '');
+        const iAmPayer = mpUserId && payerId === mpUserId;
+        const iAmCollector = mpUserId && collectorId === mpUserId;
+
         const isTransfer =
           p.operation_type === 'money_transfer' ||
-          p.operation_type === 'account_fund' ||
-          (p.payment_type_id === 'account_money' && p.transaction_amount < 0);
+          p.operation_type === 'account_fund';
 
-        const type = isTransfer ? 'transferencia'
-          : p.transaction_amount > 0 ? 'ingreso' : 'gasto';
+        let type;
+        if (isTransfer) {
+          type = 'transferencia';
+        } else if (iAmPayer) {
+          type = 'gasto';    // yo pagué → es un gasto
+        } else if (iAmCollector) {
+          type = 'ingreso';  // yo cobré → es un ingreso
+        } else {
+          // fallback por signo
+          type = p.transaction_amount < 0 ? 'gasto' : 'ingreso';
+        }
 
+        const desc = p.description || p.statement_descriptor || p.payment_method_id || 'Mercado Pago';
         const category = isTransfer ? 'Transferencia'
-          : p.transaction_amount > 0
-            ? (p.operation_type === 'regular_payment' ? 'Ventas' : 'Ventas')
-            : (p.description?.toLowerCase().includes('suscripci') ? 'Suscripciones'
-              : p.description?.toLowerCase().includes('comisi') ? 'Varios'
-              : 'Varios');
+          : type === 'gasto'
+            ? (desc.toLowerCase().includes('suscripci') ? 'Suscripciones'
+              : desc.toLowerCase().includes('luz') || desc.toLowerCase().includes('gas') || desc.toLowerCase().includes('agua') || desc.toLowerCase().includes('servicio') ? 'Servicios'
+              : 'Varios')
+          : 'Ventas';
 
         return {
           id: `mp_${p.id}`,
           date: p.date_approved?.split('T')[0] || p.date_created?.split('T')[0],
           amount: Math.abs(p.transaction_amount),
-          description: p.description || p.statement_descriptor || p.payment_method_id || 'Mercado Pago',
+          description: desc,
           type,
           method: p.payment_type_id === 'credit_card' ? 'credito'
                   : p.payment_type_id === 'debit_card' ? 'debito'
