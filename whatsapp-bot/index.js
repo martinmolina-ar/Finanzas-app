@@ -195,38 +195,69 @@ app.get('/mp-sync', async (req, res) => {
     const endDate = new Date().toISOString();
     const startDate = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000).toISOString();
 
-    const [paymentsRes, balanceRes] = await Promise.all([
-      fetch(`https://api.mercadopago.com/v1/payments/search?sort=date_created&criteria=desc&range=date_created&begin_date=${startDate}&end_date=${endDate}&limit=100&status=approved`, {
+    // Traer pagos (sin filtro de status para agarrar más) y balance
+    const [paymentsRes, balanceRes, movementsRes] = await Promise.all([
+      fetch(`https://api.mercadopago.com/v1/payments/search?sort=date_created&criteria=desc&range=date_created&begin_date=${startDate}&end_date=${endDate}&limit=100`, {
         headers: { 'Authorization': `Bearer ${token}` }
       }),
       fetch('https://api.mercadopago.com/v1/account/balance', {
         headers: { 'Authorization': `Bearer ${token}` }
+      }),
+      fetch(`https://api.mercadopago.com/v1/account/movements/search?limit=100&begin_date=${startDate}&end_date=${endDate}`, {
+        headers: { 'Authorization': `Bearer ${token}` }
       })
     ]);
 
-    const [paymentsData, balanceData] = await Promise.all([paymentsRes.json(), balanceRes.json()]);
+    const [paymentsData, balanceData, movementsData] = await Promise.all([
+      paymentsRes.json(), balanceRes.json(), movementsRes.json()
+    ]);
 
-    const payments = (paymentsData.results || []).map(p => ({
-      id: `mp_${p.id}`,
-      date: p.date_approved?.split('T')[0] || p.date_created?.split('T')[0],
-      amount: Math.abs(p.transaction_amount),
-      description: p.description || p.payment_method_id || 'Mercado Pago',
-      type: p.operation_type === 'regular_payment' && p.payer?.id == p.collector?.id ? 'transferencia'
-            : p.operation_type === 'money_transfer' ? 'transferencia'
-            : p.transaction_amount > 0 ? 'ingreso' : 'gasto',
-      method: p.payment_type_id === 'credit_card' ? 'credito'
-              : p.payment_type_id === 'debit_card' ? 'debito'
-              : p.payment_type_id === 'account_money' ? 'transferencia' : 'efectivo',
-      category: p.operation_type === 'money_transfer' ? 'Transferencia'
-                : p.transaction_amount > 0 ? 'Ventas' : 'Varios',
-      rawStatus: p.status,
-      rawType: p.operation_type,
+    console.log('Balance raw:', JSON.stringify(balanceData));
+    console.log('Payments count:', paymentsData.results?.length, 'paging:', paymentsData.paging);
+    console.log('Movements:', JSON.stringify(movementsData).slice(0, 300));
+
+    // Balance: probar varios campos posibles
+    const balance =
+      balanceData.available_balance ??
+      balanceData.total_amount ??
+      balanceData.own_money ??
+      (balanceData.accounts?.find(a => a.currency_id === 'ARS')?.available_balance) ??
+      0;
+
+    const payments = (paymentsData.results || [])
+      .filter(p => ['approved', 'settled'].includes(p.status))
+      .map(p => ({
+        id: `mp_${p.id}`,
+        date: p.date_approved?.split('T')[0] || p.date_created?.split('T')[0],
+        amount: Math.abs(p.transaction_amount),
+        description: p.description || p.statement_descriptor || p.payment_method_id || 'Mercado Pago',
+        type: p.operation_type === 'money_transfer' ? 'transferencia'
+              : p.transaction_amount > 0 ? 'ingreso' : 'gasto',
+        method: p.payment_type_id === 'credit_card' ? 'credito'
+                : p.payment_type_id === 'debit_card' ? 'debito'
+                : p.payment_type_id === 'account_money' ? 'transferencia' : 'efectivo',
+        category: p.operation_type === 'money_transfer' ? 'Transferencia'
+                  : p.transaction_amount > 0 ? 'Ventas' : 'Varios',
+      }));
+
+    // Si no hay pagos pero sí hay movements, usar esos
+    const movements = (movementsData.results || []).map(m => ({
+      id: `mpm_${m.id}`,
+      date: m.date_created?.split('T')[0],
+      amount: Math.abs(m.amount),
+      description: m.description || m.reason || 'Movimiento MP',
+      type: m.amount > 0 ? 'ingreso' : 'gasto',
+      method: 'transferencia',
+      category: m.amount > 0 ? 'Ventas' : 'Varios',
     }));
 
+    const finalPayments = payments.length > 0 ? payments : movements;
+
     res.json({
-      payments,
-      balance: balanceData.available_balance ?? balanceData.total_amount ?? 0,
-      total: paymentsData.paging?.total || payments.length,
+      payments: finalPayments,
+      balance,
+      total: finalPayments.length,
+      _debug: { balanceRaw: balanceData, paymentsCount: paymentsData.results?.length || 0, movementsCount: movementsData.results?.length || 0 }
     });
   } catch (err) {
     console.error('MP sync error:', err);
