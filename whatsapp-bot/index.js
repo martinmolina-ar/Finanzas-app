@@ -266,26 +266,21 @@ app.get('/mp-sync', async (req, res) => {
     const endDate = new Date().toISOString();
     const startDate = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000).toISOString();
 
-    const [paymentsRes, balanceRes, meRes] = await Promise.all([
+    const [paymentsRes, balanceRes] = await Promise.all([
       fetch(`https://api.mercadopago.com/v1/payments/search?sort=date_created&criteria=desc&range=date_created&begin_date=${startDate}&end_date=${endDate}&limit=100`, {
         headers: { 'Authorization': `Bearer ${token}` }
       }),
       fetch('https://api.mercadopago.com/v1/account/balance', {
         headers: { 'Authorization': `Bearer ${token}` }
-      }),
-      fetch('https://api.mercadopago.com/v1/users/me', {
-        headers: { 'Authorization': `Bearer ${token}` }
       })
     ]);
 
-    const [paymentsData, balanceData, meData] = await Promise.all([paymentsRes.json(), balanceRes.json(), meRes.json()]);
+    const [paymentsData, balanceData] = await Promise.all([paymentsRes.json(), balanceRes.json()]);
 
-    const myMpId = String(meData.id || mpUserId || '');
+    // mpUserId viene de la columna mp_user_id guardada en el OAuth callback
+    const myMpId = mpUserId;
     console.log('My MP ID:', myMpId);
-    console.log('Balance raw:', JSON.stringify(balanceData));
     console.log('Payments count:', paymentsData.results?.length);
-    // Log first payment to see structure
-    if (paymentsData.results?.[0]) console.log('Sample payment:', JSON.stringify({ payer: paymentsData.results[0].payer, collector: paymentsData.results[0].collector, amount: paymentsData.results[0].transaction_amount, op: paymentsData.results[0].operation_type }));
 
     const balance =
       balanceData.available_balance ??
@@ -297,26 +292,19 @@ app.get('/mp-sync', async (req, res) => {
     const payments = (paymentsData.results || [])
       .filter(p => ['approved', 'settled'].includes(p.status) && Math.abs(p.transaction_amount) > 0)
       .map(p => {
-        const payerId = String(p.payer?.id || '');
         const collectorId = String(p.collector?.id || '');
-        const iAmPayer = myMpId && payerId === myMpId;
+        // payer.id viene null en la API de MP — solo usamos collector
+        // Si collector soy yo → ingreso (alguien me pagó)
+        // Si collector es otro → gasto (yo pagué a alguien)
         const iAmCollector = myMpId && collectorId === myMpId;
 
         const isTransfer =
           p.operation_type === 'money_transfer' ||
           p.operation_type === 'account_fund';
 
-        let type;
-        if (isTransfer) {
-          type = 'transferencia';
-        } else if (iAmPayer) {
-          type = 'gasto';    // yo pagué → es un gasto
-        } else if (iAmCollector) {
-          type = 'ingreso';  // yo cobré → es un ingreso
-        } else {
-          // fallback por signo
-          type = p.transaction_amount < 0 ? 'gasto' : 'ingreso';
-        }
+        const type = isTransfer ? 'transferencia'
+          : iAmCollector ? 'ingreso'
+          : 'gasto'; // default: yo pagué
 
         const desc = p.description || p.statement_descriptor || p.payment_method_id || 'Mercado Pago';
         const category = isTransfer ? 'Transferencia'
