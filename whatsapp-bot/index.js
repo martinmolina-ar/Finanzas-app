@@ -300,9 +300,13 @@ app.get('/mp-sync', async (req, res) => {
         // Determinar tipo basado en la dirección real del dinero
         let type;
         if (op === 'account_fund') {
-          // Carga desde banco propio → transferencia entre mis cuentas
-          // Si payer soy yo → yo cargué desde mi banco
-          type = payerId === myMpId ? 'transferencia' : 'ingreso';
+          if (payerId === myMpId && p.payment_type_id === 'bank_transfer') {
+            type = 'transferencia'; // yo moví plata de mi banco a MP
+          } else if (payerId === myMpId) {
+            type = 'gasto'; // usé mi tarjeta para cargarle plata a alguien
+          } else {
+            type = 'ingreso'; // alguien me cargó plata a mí
+          }
         } else if (op === 'money_transfer') {
           if (collectorId && collectorId !== myMpId) {
             type = 'gasto';    // yo mandé plata a alguien
