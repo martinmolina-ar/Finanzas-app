@@ -339,7 +339,17 @@ app.get('/mp-sync', async (req, res) => {
         };
       });
 
-    res.json({ payments, balance, total: payments.length });
+    const sampleP = paymentsData.results?.[0];
+    res.json({
+      payments, balance, total: payments.length,
+      _debug: {
+        myMpId,
+        samplePayerId: sampleP?.payer?.id,
+        sampleCollectorId: sampleP?.collector?.id,
+        sampleAmount: sampleP?.transaction_amount,
+        sampleDesc: sampleP?.description,
+      }
+    });
   } catch (err) {
     console.error('MP sync error:', err);
     res.status(500).json({ error: err.message });
