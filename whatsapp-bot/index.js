@@ -185,43 +185,104 @@ app.post('/webhook', async (req, res) => {
   reply(`${emoji} *${tx.description}*\n${sign} $${tx.amount.toLocaleString()} · ${tx.category}\n📅 ${date} · ${tx.account}\n\n_Guardado en FinanzasApp_`);
 });
 
-// ─── MERCADO PAGO SYNC ─────────────────────────────────────────
+// ─── MERCADO PAGO OAUTH ────────────────────────────────────────
 
+const MP_CLIENT_ID = process.env.MP_CLIENT_ID;
+const MP_CLIENT_SECRET = process.env.MP_CLIENT_SECRET;
+const MP_REDIRECT_URI = process.env.MP_REDIRECT_URI; // ej: https://xxx.railway.app/mp-callback
+
+// 1. Redirigir al usuario a MP para autorizar
+app.get('/mp-auth', (req, res) => {
+  const { user_id } = req.query;
+  if (!user_id) return res.status(400).json({ error: 'user_id requerido' });
+  if (!MP_CLIENT_ID || !MP_REDIRECT_URI) return res.status(500).json({ error: 'MP no configurado' });
+
+  const url = `https://auth.mercadopago.com/authorization?client_id=${MP_CLIENT_ID}&redirect_uri=${encodeURIComponent(MP_REDIRECT_URI)}&response_type=code&scope=read&state=${user_id}`;
+  res.redirect(url);
+});
+
+// 2. Callback: MP nos manda el code, lo cambiamos por token y lo guardamos
+app.get('/mp-callback', async (req, res) => {
+  const { code, state: user_id } = req.query;
+  const APP_URL = (process.env.APP_URL || '').trim();
+
+  if (!code || !user_id) return res.redirect(`${APP_URL}?mp_error=missing_params`);
+
+  try {
+    const tokenRes = await fetch('https://api.mercadopago.com/oauth/token', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+      body: JSON.stringify({
+        client_id: MP_CLIENT_ID,
+        client_secret: MP_CLIENT_SECRET,
+        code,
+        grant_type: 'authorization_code',
+        redirect_uri: MP_REDIRECT_URI,
+      })
+    });
+
+    const tokenData = await tokenRes.json();
+    console.log('MP token response:', JSON.stringify(tokenData));
+
+    if (tokenData.error || !tokenData.access_token) {
+      return res.redirect(`${APP_URL}?mp_error=${tokenData.error || 'no_token'}`);
+    }
+
+    await supabase.from('profiles').upsert({
+      user_id,
+      mp_access_token: tokenData.access_token,
+      mp_refresh_token: tokenData.refresh_token || null,
+      mp_user_id: String(tokenData.user_id),
+    }, { onConflict: 'user_id' });
+
+    res.redirect(`${APP_URL}?mp_connected=true`);
+  } catch (err) {
+    console.error('MP callback error:', err);
+    res.redirect(`${(process.env.APP_URL || '').trim()}?mp_error=server_error`);
+  }
+});
+
+// 3. Desconectar MP
+app.post('/mp-disconnect', async (req, res) => {
+  const { user_id } = req.body;
+  if (!user_id) return res.status(400).json({ error: 'user_id requerido' });
+  await supabase.from('profiles').update({ mp_access_token: null, mp_refresh_token: null, mp_user_id: null }).eq('user_id', user_id);
+  res.json({ ok: true });
+});
+
+// 4. Sync: usa el token guardado del usuario
 app.get('/mp-sync', async (req, res) => {
-  const token = process.env.MP_ACCESS_TOKEN;
-  if (!token) return res.status(500).json({ error: 'MP_ACCESS_TOKEN no configurado en Railway' });
+  const { user_id } = req.query;
+  if (!user_id) return res.status(400).json({ error: 'user_id requerido' });
+
+  const { data: profile } = await supabase.from('profiles').select('mp_access_token').eq('user_id', user_id).single();
+  if (!profile?.mp_access_token) return res.status(401).json({ error: 'MP no conectado' });
+
+  const token = profile.mp_access_token;
 
   try {
     const endDate = new Date().toISOString();
     const startDate = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000).toISOString();
 
-    // Traer pagos (sin filtro de status para agarrar más) y balance
-    const [paymentsRes, balanceRes, movementsRes] = await Promise.all([
+    const [paymentsRes, balanceRes] = await Promise.all([
       fetch(`https://api.mercadopago.com/v1/payments/search?sort=date_created&criteria=desc&range=date_created&begin_date=${startDate}&end_date=${endDate}&limit=100`, {
         headers: { 'Authorization': `Bearer ${token}` }
       }),
       fetch('https://api.mercadopago.com/v1/account/balance', {
         headers: { 'Authorization': `Bearer ${token}` }
-      }),
-      fetch(`https://api.mercadopago.com/v1/account/movements/search?limit=100&begin_date=${startDate}&end_date=${endDate}`, {
-        headers: { 'Authorization': `Bearer ${token}` }
       })
     ]);
 
-    const [paymentsData, balanceData, movementsData] = await Promise.all([
-      paymentsRes.json(), balanceRes.json(), movementsRes.json()
-    ]);
+    const [paymentsData, balanceData] = await Promise.all([paymentsRes.json(), balanceRes.json()]);
 
     console.log('Balance raw:', JSON.stringify(balanceData));
-    console.log('Payments count:', paymentsData.results?.length, 'paging:', paymentsData.paging);
-    console.log('Movements:', JSON.stringify(movementsData).slice(0, 300));
+    console.log('Payments count:', paymentsData.results?.length);
 
-    // Balance: probar varios campos posibles
     const balance =
       balanceData.available_balance ??
       balanceData.total_amount ??
       balanceData.own_money ??
-      (balanceData.accounts?.find(a => a.currency_id === 'ARS')?.available_balance) ??
+      (Array.isArray(balanceData.accounts) ? balanceData.accounts.find(a => a.currency_id === 'ARS')?.available_balance : null) ??
       0;
 
     const payments = (paymentsData.results || [])
@@ -240,25 +301,7 @@ app.get('/mp-sync', async (req, res) => {
                   : p.transaction_amount > 0 ? 'Ventas' : 'Varios',
       }));
 
-    // Si no hay pagos pero sí hay movements, usar esos
-    const movements = (movementsData.results || []).map(m => ({
-      id: `mpm_${m.id}`,
-      date: m.date_created?.split('T')[0],
-      amount: Math.abs(m.amount),
-      description: m.description || m.reason || 'Movimiento MP',
-      type: m.amount > 0 ? 'ingreso' : 'gasto',
-      method: 'transferencia',
-      category: m.amount > 0 ? 'Ventas' : 'Varios',
-    }));
-
-    const finalPayments = payments.length > 0 ? payments : movements;
-
-    res.json({
-      payments: finalPayments,
-      balance,
-      total: finalPayments.length,
-      _debug: { balanceRaw: balanceData, paymentsCount: paymentsData.results?.length || 0, movementsCount: movementsData.results?.length || 0 }
-    });
+    res.json({ payments, balance, total: payments.length });
   } catch (err) {
     console.error('MP sync error:', err);
     res.status(500).json({ error: err.message });
