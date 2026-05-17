@@ -288,19 +288,34 @@ app.get('/mp-sync', async (req, res) => {
 
     const payments = (paymentsData.results || [])
       .filter(p => ['approved', 'settled'].includes(p.status) && Math.abs(p.transaction_amount) > 0)
-      .map(p => ({
-        id: `mp_${p.id}`,
-        date: p.date_approved?.split('T')[0] || p.date_created?.split('T')[0],
-        amount: Math.abs(p.transaction_amount),
-        description: p.description || p.statement_descriptor || p.payment_method_id || 'Mercado Pago',
-        type: p.operation_type === 'money_transfer' ? 'transferencia'
-              : p.transaction_amount > 0 ? 'ingreso' : 'gasto',
-        method: p.payment_type_id === 'credit_card' ? 'credito'
-                : p.payment_type_id === 'debit_card' ? 'debito'
-                : p.payment_type_id === 'account_money' ? 'transferencia' : 'efectivo',
-        category: p.operation_type === 'money_transfer' ? 'Transferencia'
-                  : p.transaction_amount > 0 ? 'Ventas' : 'Varios',
-      }));
+      .map(p => {
+        const isTransfer =
+          p.operation_type === 'money_transfer' ||
+          p.operation_type === 'account_fund' ||
+          (p.payment_type_id === 'account_money' && p.transaction_amount < 0);
+
+        const type = isTransfer ? 'transferencia'
+          : p.transaction_amount > 0 ? 'ingreso' : 'gasto';
+
+        const category = isTransfer ? 'Transferencia'
+          : p.transaction_amount > 0
+            ? (p.operation_type === 'regular_payment' ? 'Ventas' : 'Ventas')
+            : (p.description?.toLowerCase().includes('suscripci') ? 'Suscripciones'
+              : p.description?.toLowerCase().includes('comisi') ? 'Varios'
+              : 'Varios');
+
+        return {
+          id: `mp_${p.id}`,
+          date: p.date_approved?.split('T')[0] || p.date_created?.split('T')[0],
+          amount: Math.abs(p.transaction_amount),
+          description: p.description || p.statement_descriptor || p.payment_method_id || 'Mercado Pago',
+          type,
+          method: p.payment_type_id === 'credit_card' ? 'credito'
+                  : p.payment_type_id === 'debit_card' ? 'debito'
+                  : 'transferencia',
+          category,
+        };
+      });
 
     res.json({ payments, balance, total: payments.length });
   } catch (err) {
