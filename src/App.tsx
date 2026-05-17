@@ -1514,17 +1514,23 @@ export default function App() {
       const existingIds = new Set(prev.map(t => t.id));
       return [...newTxObjs.filter(t => !existingIds.has(t.id)), ...prev];
     });
-    // Actualizar saldo de la cuenta si tenemos balance real
+    // Ajustar saldo real de la cuenta Mercado Pago usando el balance de la API
     if (mpBalance !== null) {
-      const acc = accountsList.find(a => a.name === mpPreview[0]?.account);
-      if (acc) {
-        const income = [...transactions, ...newTxObjs].filter(t => t.type === 'ingreso' && t.account === acc.name).reduce((s,t) => s+t.amount, 0);
-        const expense = [...transactions, ...newTxObjs].filter(t => t.type === 'gasto' && t.account === acc.name).reduce((s,t) => s+t.amount, 0);
-        const transferOut = [...transactions, ...newTxObjs].filter(t => t.type === 'transferencia' && t.account === acc.name).reduce((s,t) => s+t.amount, 0);
-        const transferIn = [...transactions, ...newTxObjs].filter(t => t.type === 'transferencia' && t.toAccount === acc.name).reduce((s,t) => s+t.amount, 0);
+      // Buscar la cuenta de MP específicamente (no la primera transacción)
+      const mpAcc = accountsList.find(a =>
+        a.name.toLowerCase().includes('mercado pago') ||
+        a.name.toLowerCase().includes('mercadopago')
+      );
+      if (mpAcc) {
+        const allTxs = [...transactions, ...newTxObjs];
+        const income     = allTxs.filter(t => t.type === 'ingreso'       && t.account   === mpAcc.name).reduce((s,t) => s+t.amount, 0);
+        const expense    = allTxs.filter(t => t.type === 'gasto'          && t.account   === mpAcc.name).reduce((s,t) => s+t.amount, 0);
+        const transferOut = allTxs.filter(t => t.type === 'transferencia' && t.account   === mpAcc.name).reduce((s,t) => s+t.amount, 0);
+        const transferIn  = allTxs.filter(t => t.type === 'transferencia' && t.toAccount === mpAcc.name).reduce((s,t) => s+t.amount, 0);
+        // initial_balance = saldo_real - (ingresos - gastos - transferOut + transferIn)
         const newInitial = mpBalance - income + expense + transferOut - transferIn;
-        await supabase.from('accounts').update({ initial_balance: newInitial }).eq('id', acc.id);
-        setAccountsList(prev => prev.map(a => a.id === acc.id ? { ...a, initialBalance: newInitial } : a));
+        await supabase.from('accounts').update({ initial_balance: newInitial }).eq('id', mpAcc.id);
+        setAccountsList(prev => prev.map(a => a.id === mpAcc.id ? { ...a, initialBalance: newInitial } : a));
       }
     }
     setMpPreview(null);
