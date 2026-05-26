@@ -112,6 +112,41 @@ app.post('/stripe-webhook', async (req, res) => {
 
 // ─── WHATSAPP BOT ───────────────────────────────────────────────
 
+// Transacciones pendientes de confirmación: phone → { tx, date, expiresAt }
+const pendingTxMap = new Map();
+const PENDING_TTL_MS = 5 * 60 * 1000; // 5 minutos
+
+// Limpieza periódica de pendientes expirados
+setInterval(() => {
+  const now = Date.now();
+  for (const [k, v] of pendingTxMap) {
+    if (now > v.expiresAt) pendingTxMap.delete(k);
+  }
+}, 60_000);
+
+// Match fuzzy de cuenta: busca la cuenta cuyo nombre coincida mejor con lo que dijo el usuario
+function matchAccount(txAccount, accountNames, messageText) {
+  if (!accountNames.length) return txAccount;
+  const msgLower = messageText.toLowerCase();
+
+  // Si el usuario mencionó explícitamente "efectivo" y hay una cuenta con ese nombre
+  if (/efectivo/i.test(msgLower)) {
+    const efectivoAcc = accountNames.find(a => /efectivo/i.test(a));
+    if (efectivoAcc) return efectivoAcc;
+  }
+
+  // Si la cuenta que sugirió la IA está en la lista (match exacto o parcial), usarla
+  if (txAccount) {
+    const exact = accountNames.find(a => a.toLowerCase() === txAccount.toLowerCase());
+    if (exact) return exact;
+    const partial = accountNames.find(a => a.toLowerCase().includes(txAccount.toLowerCase()) || txAccount.toLowerCase().includes(a.toLowerCase()));
+    if (partial) return partial;
+  }
+
+  // Fallback: primera cuenta de la lista
+  return accountNames[0];
+}
+
 async function parseTransaction(text, accounts = ['Efectivo'], defaultAccount = 'Efectivo') {
   const msg = await anthropic.messages.create({
     model: 'claude-3-5-haiku-20241022',
@@ -123,7 +158,15 @@ async function parseTransaction(text, accounts = ['Efectivo'], defaultAccount = 
 Mensaje: "${text}"
 
 Cuentas disponibles del usuario: ${accounts.join(', ')}
-Cuenta por defecto si no se especifica: ${defaultAccount}
+Cuenta por defecto si no se especifica ninguna: ${defaultAccount}
+
+REGLAS IMPORTANTES:
+- Si el usuario menciona "efectivo" como forma de pago Y existe una cuenta llamada "Efectivo" en la lista, usá ESA cuenta.
+- "method" y "account" son conceptos distintos: method es la forma de pago (débito/crédito/transferencia/efectivo), account es la cuenta bancaria.
+- Si dice "pagué con débito/transferencia/tarjeta" pero no nombra una cuenta específica, usá la cuenta por defecto.
+- amount debe ser el número exacto que aparece en el mensaje (ej: "1500" → 1500).
+- Si no podés identificar algún campo usá valores por defecto sensatos.
+- Si el mensaje no es una transacción respondé: {"error": "no es una transacción"}
 
 JSON esperado:
 {
@@ -132,17 +175,16 @@ JSON esperado:
   "description": "descripción corta",
   "category": una de ["Comida","Alquiler","Servicios","Ocio","Transporte","Suscripciones","Salud","Varios","Sueldo","Ventas","Intereses","Regalo"],
   "method": "debito" | "credito" | "transferencia" | "efectivo",
-  "account": una de las cuentas disponibles
-}
-
-IMPORTANTE: amount debe ser el número tal como aparece en el mensaje (ej: "1500" → 1500, no convertir a otras unidades).
-Si no podés identificar algún campo usá valores por defecto sensatos.
-Si el mensaje no es una transacción respondé: {"error": "no es una transacción"}`
+  "account": una de las cuentas disponibles (exactamente como aparece en la lista)
+}`
     }]
   });
   try { return JSON.parse(msg.content[0].text.trim()); }
   catch { return { error: 'parse_error' }; }
 }
+
+const CONFIRM_WORDS = new Set(['si', 'sí', 'yes', 'dale', 'ok', 'confirmar', 'confirmo', 'guardá', 'guarda', '👍', '✅']);
+const CANCEL_WORDS  = new Set(['no', 'nope', 'cancelar', 'cancela', 'no guardes', '❌', '🙅']);
 
 app.post('/webhook', async (req, res) => {
   const from = req.body.From;
@@ -158,31 +200,84 @@ app.post('/webhook', async (req, res) => {
   if (!profile) return reply(`No encontré tu cuenta. Vinculá tu número en la app:\n⚙️ Perfil → Vincular WhatsApp\n\nTu número: ${phone}`);
   if (!profile.whatsapp_active) return reply('Tu plan no incluye el bot de WhatsApp.\n\nActivalo desde la app por $1/mes 👉 Menú → Planes');
 
-  // Obtener cuentas reales del usuario
+  const bodyLower = body.toLowerCase().trim();
+
+  // ── Respuesta a confirmación pendiente ──────────────────────────
+  const pending = pendingTxMap.get(phone);
+  if (pending && Date.now() < pending.expiresAt) {
+    if (CONFIRM_WORDS.has(bodyLower)) {
+      pendingTxMap.delete(phone);
+      const { tx, date } = pending;
+      try {
+        await supabase.from('transactions').insert({
+          id: Date.now().toString(), user_id: profile.user_id,
+          amount: tx.amount, description: tx.description, category: tx.category,
+          account: tx.account, method: tx.method, type: tx.type,
+          to_account: null, is_recurring: false,
+          income_type: tx.type === 'ingreso' ? 'variable' : null, date,
+        });
+        const emoji = tx.type === 'ingreso' ? '✅' : '🔴';
+        const sign  = tx.type === 'ingreso' ? '+' : '-';
+        return reply(`${emoji} *Guardado*\n${sign}$${tx.amount.toLocaleString('es-AR')} · ${tx.description}\n📂 ${tx.category} · 🏦 ${tx.account}`);
+      } catch (e) {
+        console.error('Error guardando tx confirmada:', e);
+        return reply('Hubo un error al guardar. Intentá de nuevo.');
+      }
+    }
+    if (CANCEL_WORDS.has(bodyLower)) {
+      pendingTxMap.delete(phone);
+      return reply('Ok, lo descarto. Mandame otro movimiento cuando quieras.');
+    }
+    // Si no es ni sí ni no, ignora el pending y procesa como nuevo mensaje
+    pendingTxMap.delete(phone);
+  }
+
+  // ── Obtener cuentas reales del usuario ───────────────────────────
   const { data: userAccounts } = await supabase.from('accounts').select('name').eq('user_id', profile.user_id);
   const accountNames = userAccounts?.map(a => a.name) || [];
   const defaultAccount = accountNames[0] || 'Efectivo';
 
-  if (['resumen', 'balance'].includes(body.toLowerCase())) {
+  // ── Comandos especiales ──────────────────────────────────────────
+  if (['resumen', 'balance'].includes(bodyLower)) {
     const today = new Date();
     const { data: txs } = await supabase.from('transactions').select('type, amount')
       .eq('user_id', profile.user_id)
       .gte('date', `${today.getFullYear()}-${String(today.getMonth()+1).padStart(2,'0')}-01`);
-    const income = txs?.filter(t => t.type === 'ingreso').reduce((s,t) => s+t.amount, 0) || 0;
+    const income  = txs?.filter(t => t.type === 'ingreso').reduce((s,t) => s+t.amount, 0) || 0;
     const expense = txs?.filter(t => t.type === 'gasto').reduce((s,t) => s+t.amount, 0) || 0;
-    return reply(`📊 *Resumen ${today.toLocaleString('es-AR',{month:'long'})}*\n\n✅ Ingresos: $${income.toLocaleString()}\n🔴 Gastos: $${expense.toLocaleString()}\n💰 Balance: $${(income-expense).toLocaleString()}`);
+    return reply(`📊 *Resumen ${today.toLocaleString('es-AR',{month:'long'})}*\n\n✅ Ingresos: $${income.toLocaleString('es-AR')}\n🔴 Gastos: $${expense.toLocaleString('es-AR')}\n💰 Balance: $${(income-expense).toLocaleString('es-AR')}`);
   }
 
-  const tx = await parseTransaction(body, accountNames.length ? accountNames : ['Efectivo'], defaultAccount);
-  if (tx.error) return reply(`No entendí. Probá:\n• "gasté 2500 en almuerzo"\n• "cobré sueldo 150000"\n\nO escribí *resumen* para ver tu balance.`);
+  // ── Parsear transacción ──────────────────────────────────────────
+  let tx;
+  try {
+    tx = await parseTransaction(body, accountNames.length ? accountNames : ['Efectivo'], defaultAccount);
+  } catch (e) {
+    console.error('Error parseando:', e);
+    return reply('Hubo un error procesando tu mensaje 😅 Intentá de nuevo en un momento.');
+  }
 
-  const id = Date.now().toString();
+  if (tx.error) return reply(`No entendí ese mensaje. Probá:\n• "gasté 2500 en almuerzo"\n• "cobré sueldo 150000"\n• "uber 1800 con efectivo"\n\nO escribí *resumen* para ver tu balance.`);
+
+  // Post-proceso: verificar account con fuzzy match
+  tx.account = matchAccount(tx.account, accountNames, body);
+
+  // Guardar como pendiente y pedir confirmación
   const date = new Date().toISOString().split('T')[0];
-  await supabase.from('transactions').insert({ id, user_id: profile.user_id, amount: tx.amount, description: tx.description, category: tx.category, account: tx.account, method: tx.method, type: tx.type, to_account: null, is_recurring: false, income_type: tx.type === 'ingreso' ? 'variable' : null, date });
+  pendingTxMap.set(phone, { tx, date, expiresAt: Date.now() + PENDING_TTL_MS });
 
-  const emoji = tx.type === 'ingreso' ? '✅' : '🔴';
-  const sign = tx.type === 'ingreso' ? '+' : '-';
-  reply(`${emoji} *${tx.description}*\n${sign} $${tx.amount.toLocaleString()} · ${tx.category}\n📅 ${date} · ${tx.account}\n\n_Guardado en FinanzasApp_`);
+  const typeEmoji = tx.type === 'ingreso' ? '💰' : tx.type === 'transferencia' ? '↔️' : '💸';
+  const sign = tx.type === 'ingreso' ? '+' : tx.type === 'transferencia' ? '' : '-';
+  const methodLabel = { debito: 'débito', credito: 'crédito', transferencia: 'transferencia', efectivo: 'efectivo' }[tx.method] || tx.method;
+
+  return reply(
+    `${typeEmoji} *${tx.type === 'gasto' ? 'Gasto' : tx.type === 'ingreso' ? 'Ingreso' : 'Transferencia'}* de ${sign}$${tx.amount.toLocaleString('es-AR')}\n` +
+    `📂 ${tx.category}\n` +
+    `💳 ${methodLabel}\n` +
+    `🏦 ${tx.account}\n` +
+    `✏️ ${tx.description}\n\n` +
+    `¿Lo guardo? Respondé *sí* o *no*.`
+  );
 });
 
 // ─── MERCADO PAGO OAUTH ────────────────────────────────────────
