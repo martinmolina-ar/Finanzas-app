@@ -4,21 +4,59 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
 
+    <!-- Favicon -->
+    <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Cdefs%3E%3ClinearGradient id='bg' x1='0%25' y1='0%25' x2='100%25' y2='100%25'%3E%3Cstop offset='0%25' stop-color='%237c3aed'/%3E%3Cstop offset='100%25' stop-color='%235b21b6'/%3E%3C/linearGradient%3E%3C/defs%3E%3Crect width='100' height='100' rx='22' fill='url(%23bg)'/%3E%3Cellipse cx='53' cy='57' rx='25' ry='18' fill='white'/%3E%3Ccircle cx='34' cy='40' r='15' fill='white'/%3E%3Cpath d='M76 52 Q90 40 87 60 Q81 57 76 55 Z' fill='white'/%3E%3Cpath d='M21 38 L9 34 L9 44 Z' fill='%23fbbf24'/%3E%3Ccircle cx='29' cy='37' r='3.5' fill='%233b0764'/%3E%3Ccircle cx='28' cy='36' r='1.3' fill='white'/%3E%3Cline x1='46' y1='74' x2='42' y2='86' stroke='white' stroke-width='2.5' stroke-linecap='round'/%3E%3Cline x1='56' y1='75' x2='59' y2='86' stroke='white' stroke-width='2.5' stroke-linecap='round'/%3E%3C/svg%3E" />
+
     <!-- PWA -->
-    <meta name="theme-color" content="#000000" />
+    <meta name="theme-color" content="#5b21b6" />
     <meta name="mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
-    <meta name="apple-mobile-web-app-title" content="Finanzas" />
+    <meta name="apple-mobile-web-app-title" content="Pampa" />
     <link rel="apple-touch-icon" href="/icons/icon-192.png" />
     <link rel="apple-touch-icon" sizes="192x192" href="/icons/icon-192.png" />
     <link rel="apple-touch-icon" sizes="512x512" href="/icons/icon-512.png" />
 
     <!-- Meta -->
-    <meta name="description" content="Tu app de finanzas personales" />
-    <meta name="application-name" content="FinanzasApp" />
+    <meta name="description" content="Pampa — Tu orden personal de finanzas" />
+    <meta name="application-name" content="Pampa" />
 
-    <title>FinanzasApp</title>
+    <title>Pampa — Tu orden personal</title>
+
+    <!-- Google AdSense -->
+    <script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-1822775100216847" crossorigin="anonymous"></script>
+
+    <!-- Auto-fix v2: mata el SW viejo que interceptaba Supabase (se ejecuta UNA vez por usuario) -->
+    <script>
+      (function() {
+        var KEY = 'sw_supabase_fix_v2';
+        if (!localStorage.getItem(KEY) && 'serviceWorker' in navigator) {
+          navigator.serviceWorker.getRegistrations().then(function(regs) {
+            localStorage.setItem(KEY, '1');
+            if (!regs.length) return; // sin SW — nada que hacer
+            Promise.all(regs.map(function(r) { return r.unregister(); }))
+              .then(function() { return 'caches' in window ? caches.keys() : Promise.resolve([]); })
+              .then(function(keys) { return Promise.all(keys.map(function(k) { return caches.delete(k); })); })
+              .then(function() { location.reload(); });
+          }).catch(function() { localStorage.setItem(KEY, '1'); });
+        }
+      })();
+    </script>
+
+    <!-- Cache reset manual: visitar /?reset=1 para limpiar SW y caché (útil en Safari) -->
+    <script>
+      if (location.search.includes('reset=1')) {
+        (async () => {
+          try {
+            const regs = await navigator.serviceWorker?.getRegistrations() || [];
+            await Promise.all(regs.map(r => r.unregister()));
+            const keys = await caches.keys();
+            await Promise.all(keys.map(k => caches.delete(k)));
+          } catch(e) {}
+          location.replace('/');
+        })();
+      }
+    </script>
   </head>
   <body>
     <div id="root"></div>
