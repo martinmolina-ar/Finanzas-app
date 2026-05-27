@@ -22,9 +22,13 @@ app.use(express.json());
 
 // CORS para la app
 app.use((req, res, next) => {
-  res.header('Access-Control-Allow-Origin', (process.env.APP_URL || '*').trim());
-  res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization');
-  res.header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+  const allowed = ['https://www.pampa-app.ar', 'https://pampa-app.ar', (process.env.APP_URL || '').trim()].filter(Boolean);
+  const origin = req.headers.origin || '';
+  if (allowed.includes(origin) || !origin) {
+    res.header('Access-Control-Allow-Origin', origin || '*');
+  }
+  res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization, apikey, prefer, x-client-info, range');
+  res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, PATCH, DELETE, OPTIONS');
   if (req.method === 'OPTIONS') return res.sendStatus(200);
   next();
 });
@@ -507,6 +511,46 @@ app.get('/mp-sync', async (req, res) => {
   } catch (err) {
     console.error('MP sync error:', err);
     res.status(500).json({ error: err.message });
+  }
+});
+
+// ─── SUPABASE PROXY ────────────────────────────────────────────────────────────
+// Proxy limpio a Supabase: solo reenvía los headers necesarios, sin x-forwarded-* de Vercel.
+// Safari puede hacer las peticiones sin CORS preflight fallido (mismo origen via Railway).
+const SUPABASE_BASE = 'https://hjjtmzfvalhqhqokzume.supabase.co';
+const SB_ALLOWED_HEADERS = ['apikey', 'authorization', 'content-type', 'accept', 'prefer', 'x-client-info', 'range'];
+const SB_SKIP_RESP = ['transfer-encoding', 'connection', 'content-encoding'];
+
+app.all('/sb-proxy/*', async (req, res) => {
+  try {
+    const sbPath = req.params[0] || '';
+    const qs = Object.keys(req.query).length ? '?' + new URLSearchParams(req.query).toString() : '';
+    const targetUrl = `${SUPABASE_BASE}/${sbPath}${qs}`;
+
+    const headers = {};
+    for (const h of SB_ALLOWED_HEADERS) {
+      if (req.headers[h]) headers[h] = req.headers[h];
+    }
+
+    let body;
+    if (!['GET', 'HEAD'].includes(req.method) && req.body) {
+      body = JSON.stringify(req.body);
+      if (!headers['content-type']) headers['content-type'] = 'application/json';
+    }
+
+    const upstream = await fetch(targetUrl, { method: req.method, headers, body });
+
+    upstream.headers.forEach((v, k) => {
+      if (!SB_SKIP_RESP.includes(k.toLowerCase())) {
+        try { res.setHeader(k, v); } catch (_) {}
+      }
+    });
+
+    const buf = await upstream.arrayBuffer();
+    res.status(upstream.status).send(Buffer.from(buf));
+  } catch (err) {
+    console.error('[sb-proxy] error:', err);
+    res.status(502).json({ message: 'Proxy error: ' + String(err) });
   }
 });
 
