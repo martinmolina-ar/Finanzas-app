@@ -4,8 +4,8 @@
     "api/ping.js":     { "runtime": "nodejs20.x" }
   },
   "rewrites": [
-    { "source": "/sb/:path*",     "destination": "/api/sb-proxy?_sbpath=:path*" },
-    { "source": "/api/sb/:path*", "destination": "/api/sb-proxy?_sbpath=:path*" }
+    { "source": "/sb/:path*",     "destination": "https://finanzas-app-production-c783.up.railway.app/sb-proxy/:path*" },
+    { "source": "/api/sb/:path*", "destination": "https://finanzas-app-production-c783.up.railway.app/sb-proxy/:path*" }
   ],
   "headers": [
     {
