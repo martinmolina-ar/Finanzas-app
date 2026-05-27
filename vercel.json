@@ -1,6 +1,7 @@
 {
   "rewrites": [
-    { "source": "/sb/:path*", "destination": "/api/sb/:path*" }
+    { "source": "/sb/:path*",     "destination": "/api/sb-proxy?_sbpath=:path*" },
+    { "source": "/api/sb/:path*", "destination": "/api/sb-proxy?_sbpath=:path*" }
   ],
   "headers": [
     {
