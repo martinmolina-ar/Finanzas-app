@@ -1019,7 +1019,7 @@ const DebtCard = ({ debt, onPay, onEdit, onDelete, confirmDeleteId, onConfirmDel
 
 const DebtView = ({ debts, accounts, onAdd, onEdit, onDelete, onPay, onBack, dolarRates }: {
   debts: Debt[]; accounts: AccountItem[];
-  onAdd: (d: Omit<Debt, 'id'>) => Promise<void>;
+  onAdd: (d: Omit<Debt, 'id'>, sourceAccount?: string) => Promise<void>;
   onEdit: (d: Debt) => Promise<void>;
   onDelete: (id: string) => Promise<void>;
   onPay: (debtId: string, debtAmountReduced: number, accountName: string, txAmount: number) => Promise<void>;
@@ -1029,6 +1029,7 @@ const DebtView = ({ debts, accounts, onAdd, onEdit, onDelete, onPay, onBack, dol
   const emptyForm = { person: '', concept: '', amount: '', type: 'me_deben' as 'me_deben' | 'les_debo', date: new Date().toISOString().split('T')[0], currency: 'ARS' as Currency };
   const [showForm, setShowForm] = useState(false);
   const [editingDebt, setEditingDebt] = useState<Debt | null>(null);
+  const [sourceAccount, setSourceAccount] = useState('');
   const [payingDebt, setPayingDebt] = useState<Debt | null>(null);
   const [form, setForm] = useState(emptyForm);
   const [payAmount, setPayAmount] = useState('');
@@ -1047,12 +1048,14 @@ const DebtView = ({ debts, accounts, onAdd, onEdit, onDelete, onPay, onBack, dol
   const openAdd = (type: 'me_deben' | 'les_debo' = 'me_deben') => {
     setEditingDebt(null);
     setForm({ ...emptyForm, type });
+    setSourceAccount('');
     setShowForm(true);
   };
 
   const openEdit = (d: Debt) => {
     setEditingDebt(d);
     setForm({ person: d.person, concept: d.concept, amount: fmtARS(d.remainingAmount), type: d.type, date: d.date, currency: d.currency });
+    setSourceAccount('');
     setShowForm(true);
   };
 
@@ -1062,7 +1065,7 @@ const DebtView = ({ debts, accounts, onAdd, onEdit, onDelete, onPay, onBack, dol
     if (editingDebt) {
       await onEdit({ ...editingDebt, person: form.person, concept: form.concept, remainingAmount: amount, date: form.date, currency: form.currency, type: form.type });
     } else {
-      await onAdd({ person: form.person, concept: form.concept, originalAmount: amount, remainingAmount: amount, type: form.type, date: form.date, currency: form.currency });
+      await onAdd({ person: form.person, concept: form.concept, originalAmount: amount, remainingAmount: amount, type: form.type, date: form.date, currency: form.currency }, sourceAccount || undefined);
     }
     setShowForm(false);
   };
@@ -1170,6 +1173,30 @@ const DebtView = ({ debts, accounts, onAdd, onEdit, onDelete, onPay, onBack, dol
               <div className="flex bg-gray-100 p-1 rounded-xl flex-1">{(['ARS', 'USD'] as Currency[]).map(c => <button key={c} type="button" onClick={() => setForm({ ...form, currency: c })} className={`flex-1 py-1.5 text-xs font-bold rounded-lg transition-all ${form.currency === c ? 'bg-white shadow' : ''}`}>{c === 'ARS' ? '🇦🇷 ARS' : '🇺🇸 USD'}</button>)}</div>
               <input type="date" value={form.date} onChange={e => setForm({ ...form, date: e.target.value })} className="flex-1 bg-gray-50 p-2 rounded-xl outline-none border text-sm" />
             </div>
+            {!editingDebt && accounts.length > 0 && (
+              <div className="space-y-1">
+                <label className="text-[10px] font-bold text-gray-400 uppercase ml-1">
+                  {form.type === 'me_deben' ? '💸 ¿De qué cuenta salió el dinero?' : '💰 ¿En qué cuenta lo recibiste?'} <span className="text-gray-300 font-normal">(opcional)</span>
+                </label>
+                <select
+                  value={sourceAccount}
+                  onChange={e => setSourceAccount(e.target.value)}
+                  className="w-full bg-gray-50 p-3 rounded-xl outline-none border text-sm"
+                >
+                  <option value="">— No afectar ninguna cuenta —</option>
+                  {accounts.map(a => (
+                    <option key={a.name} value={a.name}>{a.name} {a.currency === 'USD' ? '(USD)' : a.currency === 'EUR' ? '(EUR)' : ''}</option>
+                  ))}
+                </select>
+                {sourceAccount && (
+                  <p className="text-[11px] text-blue-500 ml-1">
+                    {form.type === 'me_deben'
+                      ? `✓ Se va a descontar el monto de "${sourceAccount}"`
+                      : `✓ Se va a acreditar el monto en "${sourceAccount}"`}
+                  </p>
+                )}
+              </div>
+            )}
             <button onClick={saveForm} className="w-full bg-black text-white font-bold py-3 rounded-2xl">Guardar</button>
           </div>
         </div>
@@ -1939,6 +1966,21 @@ export default function App() {
   // Auth listener
   useEffect(() => {
     supabase.auth.getSession().then(async ({ data: { session }, error }) => {
+      // Si el token cacheado es gigante (foto base64 en user_metadata), forzar refresh
+      if (session?.access_token && session.access_token.length > 5000) {
+        console.warn('⚠️ Token demasiado grande, forzando refresh de sesión...');
+        const { data: refreshed } = await supabase.auth.refreshSession();
+        if (refreshed?.session?.access_token && refreshed.session.access_token.length < 5000) {
+          const u = refreshed.session.user!;
+          setCurrentUser((prev: any) => ({ ...prev, id: u.id, name: u.user_metadata?.name || u.email?.split('@')[0] || 'Usuario', email: u.email || '', avatar: u.user_metadata?.avatar_url || `https://api.dicebear.com/7.x/avataaars/svg?seed=${u.email}` }));
+          setAuthLoading(false);
+          return;
+        }
+        // Si el refresh también da un token grande, sign out para limpiar
+        await supabase.auth.signOut();
+        setAuthLoading(false);
+        return;
+      }
       if (error || !session) {
         // Try to refresh session before giving up
         const { data: refreshed } = await supabase.auth.refreshSession();
@@ -2022,10 +2064,32 @@ export default function App() {
   const [retryCountdown, setRetryCountdown] = useState<number | null>(null);
   const retryCountdownRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  // Auto-retry: cuando hay timeout, cuenta regresiva y reintenta solo
+  // Muestra aviso de "despertando servidor" después de 5s de loading
+  const [loadingSlow, setLoadingSlow] = useState(false);
+  useEffect(() => {
+    if (!dataLoading) { setLoadingSlow(false); return; }
+    const t = setTimeout(() => setLoadingSlow(true), 5000);
+    return () => clearTimeout(t);
+  }, [dataLoading]);
+
+  // Failsafe: si dataLoading lleva más de 25s activo, auto-recarga la página una vez
+  // Esto cubre cualquier edge case donde Safari/SW deja la app bloqueada en loading
+  useEffect(() => {
+    if (!dataLoading) return;
+    const failsafe = setTimeout(() => {
+      const reloadCount = parseInt(sessionStorage.getItem('_pampa_reload_count') || '0');
+      if (reloadCount < 2) {
+        sessionStorage.setItem('_pampa_reload_count', String(reloadCount + 1));
+        window.location.reload();
+      }
+    }, 75000);
+    return () => clearTimeout(failsafe);
+  }, [dataLoading]);
+
+  // Auto-retry: cuando hay timeout, reintenta en 3s (Supabase ya se despertó)
   useEffect(() => {
     if (dataError && dataError.includes('⏱️') && currentUser?.id && retryCountdown === null) {
-      setRetryCountdown(20);
+      setRetryCountdown(3);
     }
   }, [dataError]);
 
@@ -2044,32 +2108,25 @@ export default function App() {
     setDataLoading(true);
     setDataError(null);
     setRetryCountdown(null);
-    let timedOut = false;
 
-    // AbortController: cancela las fetches en Safari cuando se cumple el timeout
-    // (sin esto, los requests quedan colgados y bloquean los reintentos)
-    const controller = new AbortController();
-    const signal = controller.signal;
-
-    // Timeout generoso: Supabase free tier puede tardar hasta ~30s en despertar de cold start
-    const timeoutId = setTimeout(() => {
-      timedOut = true;
-      controller.abort(); // cancela todas las fetches pendientes
-      setDataLoading(false);
-      setDataError('⏱️ El servidor tardó demasiado. Reintentando automáticamente...');
-    }, 32000);
+    // Promise.race: si las queries tardan más de 20s, el timeout gana y rechaza.
+    // Más confiable que AbortController en Safari con SW activo.
+    const timeoutPromise = new Promise<never>((_, reject) =>
+      setTimeout(() => reject(new Error('TIMEOUT')), 60000)
+    );
 
     try {
-      const [r1, r2, r3, r4, r5, r6] = await Promise.all([
-        supabase.from('transactions').select('*').eq('user_id', userId).order('date', { ascending: false }).abortSignal(signal),
-        supabase.from('accounts').select('*').eq('user_id', userId).abortSignal(signal),
-        supabase.from('budgets').select('*').eq('user_id', userId).abortSignal(signal),
-        supabase.from('debts').select('*').eq('user_id', userId).order('date', { ascending: false }).abortSignal(signal),
-        supabase.from('habits').select('*').eq('user_id', userId).order('created_at').abortSignal(signal),
-        supabase.from('habit_logs').select('*').eq('user_id', userId).abortSignal(signal),
+      const [r1, r2, r3, r4, r5, r6] = await Promise.race([
+        Promise.all([
+          supabase.from('transactions').select('*').eq('user_id', userId).order('date', { ascending: false }),
+          supabase.from('accounts').select('*').eq('user_id', userId),
+          supabase.from('budgets').select('*').eq('user_id', userId),
+          supabase.from('debts').select('*').eq('user_id', userId).order('date', { ascending: false }),
+          supabase.from('habits').select('*').eq('user_id', userId).order('created_at'),
+          supabase.from('habit_logs').select('*').eq('user_id', userId),
+        ]),
+        timeoutPromise,
       ]);
-
-      if (timedOut) return; // ya mostramos error de timeout, no pisar el estado
 
       // Log all errors for debugging
       const allErrors = [r1, r2, r3, r4, r5, r6].map((r: any, i) => r.error ? `[${['tx','acc','bud','dbt','hab','hlog'][i]}] ${r.error.code}: ${r.error.message}` : null).filter(Boolean);
@@ -2084,13 +2141,16 @@ export default function App() {
           setDataError(`Sesión expirada. Por favor cerrá sesión y volvé a entrar. (${refreshErr.message})`);
           return;
         }
-        const [rr1, rr2, rr3, rr4, rr5, rr6] = await Promise.all([
-          supabase.from('transactions').select('*').eq('user_id', userId).order('date', { ascending: false }),
-          supabase.from('accounts').select('*').eq('user_id', userId),
-          supabase.from('budgets').select('*').eq('user_id', userId),
-          supabase.from('debts').select('*').eq('user_id', userId).order('date', { ascending: false }),
-          supabase.from('habits').select('*').eq('user_id', userId).order('created_at'),
-          supabase.from('habit_logs').select('*').eq('user_id', userId),
+        const [rr1, rr2, rr3, rr4, rr5, rr6] = await Promise.race([
+          Promise.all([
+            supabase.from('transactions').select('*').eq('user_id', userId).order('date', { ascending: false }),
+            supabase.from('accounts').select('*').eq('user_id', userId),
+            supabase.from('budgets').select('*').eq('user_id', userId),
+            supabase.from('debts').select('*').eq('user_id', userId).order('date', { ascending: false }),
+            supabase.from('habits').select('*').eq('user_id', userId).order('created_at'),
+            supabase.from('habit_logs').select('*').eq('user_id', userId),
+          ]),
+          new Promise<never>((_, reject) => setTimeout(() => reject(new Error('TIMEOUT')), 20000)),
         ]);
         if (rr1.error) { setDataError(`Error tras refresh: ${rr1.error.message} (${rr1.error.code})`); return; }
         if (rr2.error) { setDataError(`Error cuentas tras refresh: ${rr2.error.message} (${rr2.error.code})`); return; }
@@ -2114,8 +2174,7 @@ export default function App() {
       if (r6.data) setHabitLogs(r6.data.map((l: any) => ({ id: l.id, habitId: l.habit_id, date: l.date })));
 
       // ── El loading de datos principales terminó — quitar el skeleton AHORA ──
-      clearTimeout(timeoutId);
-      if (!timedOut) setDataLoading(false);
+      setDataLoading(false);
 
       // ── Carga secundaria: perfil + metadata — no bloquea el loading indicator ──
       // Se hace con try/catch propio para que un fallo acá no afecte los datos ya cargados
@@ -2130,21 +2189,28 @@ export default function App() {
         const { data: { user: authUser } } = await supabase.auth.getUser();
         if (authUser?.user_metadata) {
           const meta = authUser.user_metadata;
-          if (meta.custom_categories) { setCustomCategories(meta.custom_categories); localStorage.setItem('customCategories', JSON.stringify(meta.custom_categories)); }
-          if (meta.custom_category_emojis) { setCustomCategoryEmojis(meta.custom_category_emojis); localStorage.setItem('customCategoryEmojis', JSON.stringify(meta.custom_category_emojis)); }
-          if (meta.custom_account_emojis) { setCustomAccountEmojis(meta.custom_account_emojis); localStorage.setItem('customAccountEmojis', JSON.stringify(meta.custom_account_emojis)); }
+          // Migrar a localStorage si todavía están en user_metadata, luego borrarlos del JWT
+          let needsCleanup = false;
+          if (meta.custom_categories) { setCustomCategories(meta.custom_categories); localStorage.setItem('customCategories', JSON.stringify(meta.custom_categories)); needsCleanup = true; }
+          if (meta.custom_category_emojis) { setCustomCategoryEmojis(meta.custom_category_emojis); localStorage.setItem('customCategoryEmojis', JSON.stringify(meta.custom_category_emojis)); needsCleanup = true; }
+          if (meta.custom_account_emojis) { setCustomAccountEmojis(meta.custom_account_emojis); localStorage.setItem('customAccountEmojis', JSON.stringify(meta.custom_account_emojis)); needsCleanup = true; }
+          // Limpiar user_metadata para que el JWT vuelva a ser pequeño
+          if (needsCleanup) {
+            supabase.auth.updateUser({ data: { custom_categories: null, custom_category_emojis: null, custom_account_emojis: null } });
+          }
         }
       } catch { /* metadata no crítica */ }
 
     } catch (err: any) {
-      // AbortError = timeout ya lo manejó, ignorar
-      if (!timedOut && err?.name !== 'AbortError') {
-        console.error('❌ Error cargando datos:', err);
+      console.error('❌ Error cargando datos:', err);
+      if (err?.message === 'TIMEOUT') {
+        setDataError('⏱️ El servidor tardó demasiado. Reintentando automáticamente...');
+      } else {
         setDataError(err?.message || JSON.stringify(err));
       }
     } finally {
-      clearTimeout(timeoutId);
-      if (!timedOut) setDataLoading(false);
+      // finally SIEMPRE corre — incluso si Promise.race rechaza por timeout
+      setDataLoading(false);
     }
   }, []);
 
@@ -2490,7 +2556,7 @@ export default function App() {
       if (!accForm.emoji) delete updatedAccEmojis[accForm.id];
       setCustomAccountEmojis(updatedAccEmojis);
       localStorage.setItem('customAccountEmojis', JSON.stringify(updatedAccEmojis));
-      supabase.auth.updateUser({ data: { custom_account_emojis: updatedAccEmojis } });
+      // Solo localStorage — NO user_metadata
     } else {
       const parsedInitialBal = accForm.type === 'credito' && accForm.limit
         ? parseInput(accForm.balance) - parseInput(accForm.limit) // available → actual (negative)
@@ -2504,7 +2570,7 @@ export default function App() {
         const updatedAccEmojis = { ...customAccountEmojis, [newAcc.id]: accForm.emoji };
         setCustomAccountEmojis(updatedAccEmojis);
         localStorage.setItem('customAccountEmojis', JSON.stringify(updatedAccEmojis));
-        supabase.auth.updateUser({ data: { custom_account_emojis: updatedAccEmojis } });
+        // Solo localStorage — NO user_metadata
       }
     }
     showToast('Cuenta guardada ✓');
@@ -2621,8 +2687,7 @@ export default function App() {
       setCustomCategoryEmojis(updatedEmojis);
       localStorage.setItem('customCategoryEmojis', JSON.stringify(updatedEmojis));
     }
-    // Persistir en Supabase Auth user_metadata
-    supabase.auth.updateUser({ data: { custom_categories: updatedCats, custom_category_emojis: updatedEmojis } });
+    // Solo localStorage — NO user_metadata (infla el JWT a 44KB y rompe todos los requests)
     setTransForm(f => ({ ...f, category: trimmed }));
     setAddingCategory(false);
     setNewCategoryInput('');
@@ -2634,10 +2699,41 @@ export default function App() {
 
   // --- HANDLERS DEUDAS ---
 
-  const handleSaveDebt = async (d: Omit<Debt, 'id'>) => {
+  const handleSaveDebt = async (d: Omit<Debt, 'id'>, sourceAccount?: string) => {
     const newDebt: Debt = { ...d, id: Date.now().toString() };
     await supabase.from('debts').insert({ id: newDebt.id, user_id: currentUser.id, person: newDebt.person, concept: newDebt.concept, original_amount: newDebt.originalAmount, remaining_amount: newDebt.remainingAmount, type: newDebt.type, date: newDebt.date, currency: newDebt.currency });
     setDebts(prev => [newDebt, ...prev]);
+
+    if (sourceAccount) {
+      // me_deben = yo presté = gasto de la cuenta; les_debo = me prestaron = ingreso en la cuenta
+      const txType: TransactionType = newDebt.type === 'me_deben' ? 'gasto' : 'ingreso';
+      const category = newDebt.type === 'me_deben' ? 'Préstamo otorgado' : 'Préstamo recibido';
+      const description = newDebt.type === 'me_deben'
+        ? `Préstamo a ${newDebt.person}`
+        : `Préstamo de ${newDebt.person}`;
+      const tx: Transaction = {
+        id: (Date.now() + 1).toString(),
+        amount: newDebt.originalAmount,
+        description,
+        category,
+        account: sourceAccount,
+        method: 'transferencia',
+        type: txType,
+        date: newDebt.date,
+        isRecurring: false,
+      };
+      const dbRow = { id: tx.id, user_id: currentUser.id, amount: tx.amount, description: tx.description, category: tx.category, account: tx.account, to_account: null, method: tx.method, type: tx.type, income_type: null, is_recurring: false, date: tx.date };
+      const { error: txErr } = await supabase.from('transactions').insert(dbRow);
+      if (txErr) {
+        showToast('⚠️ Deuda guardada pero error en transacción: ' + txErr.message);
+      } else {
+        setTransactions(prev => [tx, ...prev]);
+        const verb = txType === 'gasto' ? 'descontado de' : 'acreditado en';
+        showToast(`Deuda guardada ✓ · Monto ${verb} "${sourceAccount}"`);
+        return;
+      }
+    }
+
     showToast('Deuda guardada ✓');
   };
 
@@ -2934,6 +3030,9 @@ export default function App() {
                     <div className="h-8 bg-gray-200 rounded-lg w-20" />
                     <div className="h-8 bg-gray-200 rounded-lg w-14" />
                   </div>
+                  {loadingSlow && (
+                    <p className="text-xs text-orange-500 mt-3 text-center">⏳ Despertando servidor... puede tardar hasta 60s</p>
+                  )}
                 </div>
               ) : dataError ? (
                 /* Error con retry */
@@ -3084,12 +3183,13 @@ export default function App() {
                 <button
                   onClick={async () => {
                     try {
-                      await fetch('https://pampa-whatsapp-bot-production.up.railway.app/link', {
+                      const r = await fetch('https://pampa-whatsapp-bot-production.up.railway.app/link', {
                         method: 'POST', headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({ phone: userPlan.phone, user_id: currentUser.id, name: currentUser.name }),
                       });
-                      showToast('📱 Mensaje enviado a WhatsApp');
-                    } catch { showToast('❌ Error al conectar'); }
+                      if (r.ok) showToast('📱 Mensaje enviado a WhatsApp');
+                      else showToast('❌ Error al enviar. Revisá los logs del bot.');
+                    } catch { showToast('❌ Error al conectar con el bot'); }
                   }}
                   className="text-green-600 text-xs font-bold bg-green-100 px-3 py-2 rounded-xl shrink-0"
                 >
