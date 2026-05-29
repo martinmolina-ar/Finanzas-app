@@ -2797,11 +2797,6 @@ export default function App() {
   return (
     <div className="min-h-screen pampa-bg text-[#1D1D1F] font-sans flex flex-col">
 
-      {/* ── DEBUG BADGE (temp) — sacarlo después ── */}
-      <div className="fixed top-2 right-2 z-[999] text-[9px] font-mono bg-black/80 text-white rounded-lg px-2 py-1 pointer-events-none max-w-[180px]">
-        {dataLoading ? '⏳ cargando...' : dataError ? `❌ ${dataError.slice(0,60)}` : `✅ ${accountsList.length} cuentas · ${transactions.length} tx`}
-        <br/>uid: {currentUser?.id?.slice(0,8) ?? 'null'}
-      </div>
 
       {/* ── DOCK MENU ────────────────────────────────── */}
       <div className={`fixed inset-0 z-[80] flex items-center justify-center px-6 transition-all duration-300 ${showMenu ? 'pointer-events-auto' : 'pointer-events-none'}`}>
