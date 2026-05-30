@@ -140,6 +140,19 @@ interface HabitLog {
   date: string;
 }
 
+type Investment = {
+  id: string;
+  user_id: string;
+  name: string;
+  type: 'crypto' | 'stock' | 'etf' | 'fund' | 'asset' | 'other';
+  ticker?: string;
+  quantity: number;
+  purchase_price: number;
+  current_price?: number;
+  currency: string;
+  notes?: string;
+};
+
 const HABIT_COLORS = ['#10B981', '#3B82F6', '#F59E0B', '#EF4444', '#8B5CF6', '#EC4899', '#06B6D4', '#84CC16'];
 
 interface DolarRates {
@@ -564,6 +577,173 @@ const ReportsView = ({ transactions }: { transactions: Transaction[] }) => {
       <ReportsDonut data={incomesByCategory} total={reportStats.income} title="Ingresos por categoría" />
       <ReportsDonut data={expensesByCategory} total={reportStats.expense} title="Gastos por categoría" />
       <ReportsBarChart historyData={historyData} />
+    </div>
+  );
+};
+
+// --- INVESTMENTS VIEW ---
+
+const InvestmentsView = ({
+  investments,
+  blueRate,
+  onSave,
+  onDelete,
+  onBack,
+}: {
+  investments: Investment[];
+  blueRate: number;
+  onSave: (inv: Investment) => void;
+  onDelete: (id: string) => void;
+  onBack: () => void;
+}) => {
+  const [showForm, setShowForm] = useState(false);
+  const [editing, setEditing] = useState<Investment | null>(null);
+  const [form, setForm] = useState<Partial<Investment>>({
+    name: '', type: 'crypto', ticker: '', quantity: 1, purchase_price: 0, currency: 'USD',
+  });
+
+  const openAdd = () => { setEditing(null); setForm({ name: '', type: 'crypto', ticker: '', quantity: 1, purchase_price: 0, currency: 'USD' }); setShowForm(true); };
+  const openEdit = (inv: Investment) => { setEditing(inv); setForm({ ...inv }); setShowForm(true); };
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    const inv: Investment = {
+      id: editing?.id || Date.now().toString(),
+      user_id: editing?.user_id || '',
+      name: form.name || '',
+      type: form.type as Investment['type'] || 'other',
+      ticker: form.ticker || undefined,
+      quantity: Number(form.quantity) || 1,
+      purchase_price: Number(form.purchase_price) || 0,
+      current_price: form.current_price ? Number(form.current_price) : undefined,
+      currency: form.currency || 'USD',
+      notes: form.notes || undefined,
+    };
+    onSave(inv);
+    setShowForm(false);
+  };
+
+  const totalARS = investments.reduce((s, inv) => {
+    const price = inv.current_price || inv.purchase_price;
+    const val = price * inv.quantity;
+    return s + (inv.currency === 'USD' ? val * blueRate : val);
+  }, 0);
+
+  const TYPE_LABELS: Record<string, string> = { crypto: '🪙 Crypto', stock: '📈 Acción', etf: '📊 ETF', fund: '🏦 Fondo', asset: '🏠 Activo', other: '📋 Otro' };
+
+  return (
+    <div className="space-y-5 animate-in fade-in">
+      <div className="flex items-center gap-3">
+        <button onClick={onBack} className="p-2 bg-white rounded-full shadow-sm"><ArrowLeft size={20} /></button>
+        <h2 className="text-2xl font-bold flex-1">Inversiones</h2>
+        <button onClick={openAdd} className="bg-black text-white px-3 py-1.5 rounded-full text-xs font-bold flex items-center gap-1"><Plus size={14} /> Agregar</button>
+      </div>
+
+      {/* Total portfolio */}
+      <div className="bg-gradient-to-br from-indigo-600 to-purple-600 rounded-3xl p-5 text-white">
+        <p className="text-sm font-medium opacity-80">Portafolio total (ARS)</p>
+        <p className="text-4xl font-bold mt-1">$ {fmtARS(totalARS)}</p>
+        {blueRate > 0 && <p className="text-xs mt-1 opacity-60">≈ U$S {fmtARS(totalARS / blueRate)} · Blue ${fmtARS(blueRate)}</p>}
+      </div>
+
+      {investments.length === 0 ? (
+        <div className="text-center py-12 space-y-3">
+          <div className="text-5xl">📈</div>
+          <p className="font-bold text-lg">Sin inversiones registradas</p>
+          <p className="text-sm text-gray-400">Registrá tus cripto, acciones o cualquier activo</p>
+          <button onClick={openAdd} className="bg-black text-white px-6 py-3 rounded-2xl font-bold">Agregar inversión</button>
+        </div>
+      ) : (
+        <div className="space-y-3">
+          {investments.map(inv => {
+            const price = inv.current_price || inv.purchase_price;
+            const valueUSD = price * inv.quantity;
+            const valueARS = inv.currency === 'USD' ? valueUSD * blueRate : valueUSD;
+            const gainPct = inv.current_price && inv.purchase_price > 0
+              ? ((inv.current_price - inv.purchase_price) / inv.purchase_price) * 100
+              : null;
+            return (
+              <div key={inv.id} className="glass rounded-2xl p-4">
+                <div className="flex items-center gap-3">
+                  <div className="w-11 h-11 bg-indigo-100 rounded-2xl flex items-center justify-center text-lg flex-shrink-0">
+                    {inv.type === 'crypto' ? '🪙' : inv.type === 'stock' ? '📈' : inv.type === 'etf' ? '📊' : '💼'}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-1.5">
+                      <p className="font-bold truncate">{inv.name}</p>
+                      {inv.ticker && <span className="text-[10px] font-bold bg-gray-100 text-gray-500 px-1.5 py-0.5 rounded-full">{inv.ticker}</span>}
+                    </div>
+                    <p className="text-xs text-gray-400 mt-0.5">{inv.quantity} × {inv.currency === 'USD' ? 'U$S' : '$'} {fmtARS(price)} = <span className="font-bold text-gray-700">$ {fmtARS(valueARS)}</span></p>
+                    {gainPct !== null && (
+                      <p className={`text-xs font-bold mt-0.5 ${gainPct >= 0 ? 'text-green-500' : 'text-red-500'}`}>
+                        {gainPct >= 0 ? '▲' : '▼'} {Math.abs(gainPct).toFixed(1)}%
+                      </p>
+                    )}
+                  </div>
+                  <div className="flex flex-col gap-1">
+                    <button onClick={() => openEdit(inv)} className="text-gray-400 p-1"><Pencil size={14} /></button>
+                    <button onClick={() => onDelete(inv.id)} className="text-red-400 p-1"><Trash2 size={14} /></button>
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {/* Add/Edit Form Modal */}
+      {showForm && (
+        <div className="fixed inset-0 z-[70] flex items-end justify-center bg-black/50 backdrop-blur-md" onClick={() => setShowForm(false)}>
+          <div className="bg-white rounded-t-[2rem] w-full max-w-sm max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+            <form onSubmit={handleSubmit} className="p-6 space-y-4">
+              <div className="flex items-center justify-between mb-2">
+                <h3 className="text-lg font-bold">{editing ? 'Editar' : 'Nueva'} inversión</h3>
+                <button type="button" onClick={() => setShowForm(false)} className="p-2 bg-gray-100 rounded-full"><X size={16} /></button>
+              </div>
+              <div>
+                <label className="text-xs font-bold text-gray-500 mb-1 block">Nombre</label>
+                <input required className="w-full bg-gray-50 rounded-xl p-3 text-sm font-bold" placeholder="Bitcoin, Apple, etc." value={form.name || ''} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} />
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-xs font-bold text-gray-500 mb-1 block">Tipo</label>
+                  <select className="w-full bg-gray-50 rounded-xl p-3 text-sm font-bold" value={form.type || 'crypto'} onChange={e => setForm(f => ({ ...f, type: e.target.value as Investment['type'] }))}>
+                    {Object.entries(TYPE_LABELS).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <label className="text-xs font-bold text-gray-500 mb-1 block">Moneda</label>
+                  <select className="w-full bg-gray-50 rounded-xl p-3 text-sm font-bold" value={form.currency || 'USD'} onChange={e => setForm(f => ({ ...f, currency: e.target.value }))}>
+                    <option value="USD">USD</option>
+                    <option value="ARS">ARS</option>
+                  </select>
+                </div>
+              </div>
+              <div>
+                <label className="text-xs font-bold text-gray-500 mb-1 block">Ticker (opcional)</label>
+                <input className="w-full bg-gray-50 rounded-xl p-3 text-sm font-bold uppercase" placeholder="BTC, AAPL..." value={form.ticker || ''} onChange={e => setForm(f => ({ ...f, ticker: e.target.value.toUpperCase() }))} />
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-xs font-bold text-gray-500 mb-1 block">Cantidad</label>
+                  <input required type="number" step="any" min="0" className="w-full bg-gray-50 rounded-xl p-3 text-sm font-bold" value={form.quantity || ''} onChange={e => setForm(f => ({ ...f, quantity: Number(e.target.value) }))} />
+                </div>
+                <div>
+                  <label className="text-xs font-bold text-gray-500 mb-1 block">Precio compra</label>
+                  <input required type="number" step="any" min="0" className="w-full bg-gray-50 rounded-xl p-3 text-sm font-bold" value={form.purchase_price || ''} onChange={e => setForm(f => ({ ...f, purchase_price: Number(e.target.value) }))} />
+                </div>
+              </div>
+              <div>
+                <label className="text-xs font-bold text-gray-500 mb-1 block">Precio actual (opcional)</label>
+                <input type="number" step="any" min="0" className="w-full bg-gray-50 rounded-xl p-3 text-sm font-bold" placeholder="Dejar vacío para usar precio de compra" value={form.current_price || ''} onChange={e => setForm(f => ({ ...f, current_price: e.target.value ? Number(e.target.value) : undefined }))} />
+              </div>
+              <button type="submit" className="w-full bg-black text-white font-bold py-3.5 rounded-2xl">
+                {editing ? 'Guardar cambios' : 'Agregar inversión'}
+              </button>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
@@ -1782,6 +1962,15 @@ export default function App() {
   }, []);
   const [activeTab, setActiveTab] = useState('dashboard');
   const [showMenu, setShowMenu] = useState(false);
+  // ── AI Analysis ──
+  const [aiAnalysis, setAiAnalysis] = useState<any>(null);
+  const [aiLoading, setAiLoading] = useState(false);
+  const [aiError, setAiError] = useState<string | null>(null);
+  const [aiMonth, setAiMonth] = useState(new Date().getMonth() + 1);
+  const [aiYear, setAiYear] = useState(new Date().getFullYear());
+  // ── Investments ──
+  const [investments, setInvestments] = useState<Investment[]>([]);
+  const [showInvestments, setShowInvestments] = useState(false);
   const [showTransactionModal, setShowTransactionModal] = useState(false);
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
   const [locked, setLocked] = useState(() => localStorage.getItem('appLocked') === 'true');
@@ -2176,6 +2365,12 @@ export default function App() {
       // ── El loading de datos principales terminó — quitar el skeleton AHORA ──
       setDataLoading(false);
 
+      // ── Carga de inversiones (no bloquea el loading) ──
+      try {
+        const { data: invData } = await supabase.from('investments').select('*').eq('user_id', userId);
+        if (invData) setInvestments(invData.map((i: any) => ({ id: i.id, user_id: i.user_id, name: i.name, type: i.type, ticker: i.ticker || undefined, quantity: i.quantity, purchase_price: i.purchase_price, current_price: i.current_price || undefined, currency: i.currency, notes: i.notes || undefined })));
+      } catch { /* inversiones no crítico */ }
+
       // ── Carga secundaria: perfil + metadata — no bloquea el loading indicator ──
       // Se hace con try/catch propio para que un fallo acá no afecte los datos ya cargados
       try {
@@ -2427,7 +2622,12 @@ export default function App() {
   const pasivosTarjetas = accountBalances.filter(a => a.type === 'credito').reduce((s, a) => s + Math.abs(Math.min(0, a.current)), 0);
   const pasivosDeudas = debts.filter(d => d.type === 'les_debo' && d.remainingAmount > 0).reduce((s, d) => s + toARS(d.remainingAmount, d.currency), 0);
   const totalPasivos = pasivosTarjetas + pasivosDeudas;
-  const patrimonioNeto = totalActivos - totalPasivos;
+  const investmentsValueARS = investments.reduce((s, inv) => {
+    const price = inv.current_price || inv.purchase_price;
+    const valueInCurrency = price * inv.quantity;
+    return s + (inv.currency === 'USD' ? valueInCurrency * blueRate : valueInCurrency);
+  }, 0);
+  const patrimonioNeto = totalActivos + investmentsValueARS - totalPasivos;
 
   const today = new Date();
   const currentMonthTxs = transactions.filter(t => { const [y, m] = t.date.split('-').map(Number); return y === today.getFullYear() && m === today.getMonth() + 1; });
@@ -2441,6 +2641,52 @@ export default function App() {
   // --- HANDLERS ---
 
   const changeTab = (tab: string) => { setActiveTab(tab); setShowMenu(false); };
+
+  // ── AI Analysis handler ──
+  const handleAiAnalysis = async () => {
+    if (!currentUser) return;
+    setAiLoading(true);
+    setAiError(null);
+    try {
+      const r = await fetch('/api/analyze', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          transactions,
+          accounts: accountsList,
+          month: aiMonth,
+          year: aiYear,
+          userName: currentUser.name,
+        }),
+      });
+      const data = await r.json();
+      if (!r.ok) throw new Error(data.error || 'Error al analizar');
+      setAiAnalysis(data.analysis);
+    } catch (err: any) {
+      setAiError(err.message);
+    } finally {
+      setAiLoading(false);
+    }
+  };
+
+  // ── Investment handlers ──
+  const handleSaveInvestment = async (inv: Investment) => {
+    if (!currentUser) return;
+    const row = { id: inv.id, user_id: currentUser.id, name: inv.name, type: inv.type, ticker: inv.ticker || null, quantity: inv.quantity, purchase_price: inv.purchase_price, current_price: inv.current_price || null, currency: inv.currency, notes: inv.notes || null };
+    const existing = investments.find(i => i.id === inv.id);
+    if (existing) {
+      await supabase.from('investments').update(row).eq('id', inv.id);
+      setInvestments(prev => prev.map(i => i.id === inv.id ? inv : i));
+    } else {
+      await supabase.from('investments').insert(row);
+      setInvestments(prev => [inv, ...prev]);
+    }
+  };
+
+  const handleDeleteInvestment = async (id: string) => {
+    await supabase.from('investments').delete().eq('id', id);
+    setInvestments(prev => prev.filter(i => i.id !== id));
+  };
   const handleLogout = async () => {
     setShowMenu(false);
     await supabase.auth.signOut();
@@ -2826,6 +3072,7 @@ export default function App() {
               { emoji: '👤', label: 'Mi Perfil', tab: 'profile', action: null },
               { emoji: '💸', label: 'Deudas', tab: 'debts', action: null },
               { emoji: '🔥', label: 'Hábitos', tab: 'habits', action: null },
+              { emoji: '📊', label: 'Inversiones', tab: null, action: () => { setShowInvestments(true); setShowMenu(false); } },
               { emoji: '🛒', label: 'Lista de compras', tab: 'shopping', action: null },
               { emoji: '📈', label: 'Proyecciones', tab: 'future', action: null },
               { emoji: '🎯', label: 'Presupuestos', tab: null, action: () => { setShowBudgetModal(true); setShowMenu(false); } },
@@ -2862,10 +3109,20 @@ export default function App() {
 
       {/* ── CONTENIDO ────────────────────────────────── */}
       <main className="flex-1 overflow-y-auto px-5 pt-5 pb-36 space-y-5">
-        <div key={activeTab} className="animate-fade-slide">
+        <div key={showInvestments ? 'investments' : activeTab} className="animate-fade-slide">
 
-        {activeTab === 'profile' && <ProfileView user={currentUser} onUpdate={handleUpdateProfile} onBack={() => changeTab('dashboard')} showToast={showToast} />}
-        {activeTab === 'shopping' && (
+        {showInvestments && (
+          <InvestmentsView
+            investments={investments}
+            blueRate={blueRate}
+            onSave={handleSaveInvestment}
+            onDelete={handleDeleteInvestment}
+            onBack={() => setShowInvestments(false)}
+          />
+        )}
+
+        {!showInvestments && activeTab === 'profile' && <ProfileView user={currentUser} onUpdate={handleUpdateProfile} onBack={() => changeTab('dashboard')} showToast={showToast} />}
+        {!showInvestments && activeTab === 'shopping' && (
           <div className="space-y-4 animate-fade-slide">
             <div className="flex items-center gap-3 mb-2">
               <button onClick={() => changeTab('dashboard')} className="p-2 glass rounded-full"><ArrowLeft size={20} /></button>
@@ -2952,10 +3209,99 @@ export default function App() {
           </div>
         )}
 
-        {activeTab === 'help' && <HelpView onBack={() => changeTab('dashboard')} onShowTutorial={() => { setTutorialStep(0); setShowTutorial(true); }} />}
-        {activeTab === 'reports' && <ReportsView transactions={transactions} />}
-        {activeTab === 'future' && <FutureView liquidBalance={liquidBalance} />}
-        {activeTab === 'debts' && (
+        {!showInvestments && activeTab === 'help' && <HelpView onBack={() => changeTab('dashboard')} onShowTutorial={() => { setTutorialStep(0); setShowTutorial(true); }} />}
+        {!showInvestments && activeTab === 'reports' && (
+          <div className="space-y-5 animate-in fade-in">
+            {/* ── Análisis IA ── */}
+            <div className="glass rounded-[2rem] p-5">
+              <div className="flex items-center justify-between mb-3">
+                <div className="flex items-center gap-2">
+                  <span className="text-lg">🤖</span>
+                  <span className="font-bold text-gray-900">Análisis IA</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <select
+                    value={aiMonth}
+                    onChange={e => { setAiMonth(Number(e.target.value)); setAiAnalysis(null); }}
+                    className="text-xs bg-gray-50 border border-gray-200 rounded-xl px-2 py-1 font-bold"
+                  >
+                    {['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'].map((m, i) => (
+                      <option key={i} value={i + 1}>{m}</option>
+                    ))}
+                  </select>
+                  <select
+                    value={aiYear}
+                    onChange={e => { setAiYear(Number(e.target.value)); setAiAnalysis(null); }}
+                    className="text-xs bg-gray-50 border border-gray-200 rounded-xl px-2 py-1 font-bold"
+                  >
+                    {[new Date().getFullYear() - 1, new Date().getFullYear()].map(y => (
+                      <option key={y} value={y}>{y}</option>
+                    ))}
+                  </select>
+                  <button
+                    onClick={handleAiAnalysis}
+                    disabled={aiLoading}
+                    className="bg-purple-600 text-white text-xs font-bold px-3 py-1.5 rounded-xl disabled:opacity-50 flex items-center gap-1"
+                  >
+                    {aiLoading ? <><RefreshCw size={11} className="animate-spin" /> Analizando...</> : 'Analizar'}
+                  </button>
+                </div>
+              </div>
+              {aiError && (
+                <div className="bg-red-50 rounded-xl p-3 text-xs text-red-600 font-medium">{aiError}</div>
+              )}
+              {!aiAnalysis && !aiLoading && !aiError && (
+                <p className="text-xs text-gray-400 text-center py-4">Seleccioná el mes y presioná Analizar para obtener un análisis personalizado de tus finanzas.</p>
+              )}
+              {aiAnalysis && (
+                <div className="space-y-3">
+                  {/* Score */}
+                  <div className="flex items-center justify-between">
+                    <p className="text-sm font-bold text-gray-800">{aiAnalysis.titulo}</p>
+                    <div className="flex items-center gap-1 bg-purple-50 px-2.5 py-1 rounded-full">
+                      <span className="text-xs font-bold text-purple-700">Score {aiAnalysis.score}/10</span>
+                      <span className="text-xs">{aiAnalysis.score >= 8 ? '🌟' : aiAnalysis.score >= 5 ? '⭐' : '📉'}</span>
+                    </div>
+                  </div>
+                  {/* Resumen */}
+                  <p className="text-xs text-gray-600 leading-relaxed bg-gray-50 rounded-xl p-3">{aiAnalysis.resumen}</p>
+                  {/* Highlights */}
+                  {aiAnalysis.highlights?.length > 0 && (
+                    <div className="space-y-2">
+                      {aiAnalysis.highlights.map((h: any, i: number) => (
+                        <div key={i} className={`flex items-start gap-2 text-xs p-2.5 rounded-xl ${h.tipo === 'positivo' ? 'bg-green-50 text-green-700' : h.tipo === 'negativo' ? 'bg-red-50 text-red-700' : 'bg-blue-50 text-blue-700'}`}>
+                          <span>{h.tipo === 'positivo' ? '✅' : h.tipo === 'negativo' ? '⚠️' : 'ℹ️'}</span>
+                          <span className="font-medium">{h.texto}</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  {/* Categoría destacada */}
+                  {aiAnalysis.categoriaDestacada && (
+                    <div className="bg-amber-50 rounded-xl p-3 flex items-start gap-2">
+                      <span className="text-base">📊</span>
+                      <div>
+                        <p className="text-xs font-bold text-amber-800">Categoría más gastada: {aiAnalysis.categoriaDestacada.nombre}</p>
+                        <p className="text-xs text-amber-600 mt-0.5">{aiAnalysis.categoriaDestacada.comparacion}</p>
+                      </div>
+                    </div>
+                  )}
+                  {/* Consejo */}
+                  {aiAnalysis.consejo && (
+                    <div className="bg-purple-50 rounded-xl p-3 flex items-start gap-2">
+                      <span className="text-base">💡</span>
+                      <p className="text-xs text-purple-700 font-medium">{aiAnalysis.consejo}</p>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+            {/* ── Reportes estándar ── */}
+            <ReportsView transactions={transactions} />
+          </div>
+        )}
+        {!showInvestments && activeTab === 'future' && <FutureView liquidBalance={liquidBalance} />}
+        {!showInvestments && activeTab === 'debts' && (
           <DebtView
             debts={debts}
             accounts={accountsList}
@@ -2968,7 +3314,7 @@ export default function App() {
           />
         )}
 
-        {activeTab === 'habits' && (
+        {!showInvestments && activeTab === 'habits' && (
           <HabitsView
             habits={habits}
             logs={habitLogs}
@@ -2980,7 +3326,7 @@ export default function App() {
           />
         )}
 
-        {activeTab === 'settings' && (
+        {!showInvestments && activeTab === 'settings' && (
           <div className="space-y-6 animate-in fade-in">
             <div className="flex items-center gap-3"><button onClick={() => changeTab('dashboard')} className="p-2 bg-white rounded-full shadow-sm"><ArrowLeft size={20} /></button><h2 className="text-2xl font-bold">Configuración</h2></div>
             <div className="glass p-6 rounded-[2rem] space-y-5">
@@ -3005,20 +3351,52 @@ export default function App() {
         )}
 
         {/* ── DASHBOARD ──────────────────────────────── */}
-        {activeTab === 'dashboard' && (
+        {!showInvestments && activeTab === 'dashboard' && (
           <div className="space-y-5 animate-in fade-in">
 
-            {/* Balance principal — compacto para no cortarse */}
-            <div className="glass rounded-[2rem] p-5">
-              <div className="flex items-center justify-between">
-                <span className="text-[#86868B] font-medium text-xs tracking-wide uppercase">Neto para Gastar</span>
-                <button onClick={() => currentUser?.id && loadUserData(currentUser.id)} title="Recargar datos" className="text-gray-400 hover:text-purple-600 transition-colors">
-                  <RefreshCw size={13} className={dataLoading ? 'animate-spin text-purple-500' : ''} />
+            {/* ── Greeting header ── */}
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-xs text-gray-400 font-medium">
+                  {(() => {
+                    const h = new Date().getHours();
+                    return h < 12 ? '🌅 Buenos días' : h < 19 ? '☀️ Buenas tardes' : '🌙 Buenas noches';
+                  })()}
+                </p>
+                <h1 className="text-2xl font-bold text-gray-900">{currentUser?.name?.split(' ')[0] || 'Pampa'}</h1>
+              </div>
+              <div className="flex items-center gap-2">
+                {habits.length > 0 && (() => {
+                  const bestStreak = Math.max(...habits.map(h => {
+                    let s = 0;
+                    const d = new Date();
+                    const todayStr = d.toISOString().split('T')[0];
+                    const dc = new Date();
+                    if (!habitLogs.some(l => l.habitId === h.id && l.date === todayStr)) dc.setDate(dc.getDate() - 1);
+                    while (true) {
+                      const ds = dc.toISOString().split('T')[0];
+                      if (habitLogs.some(l => l.habitId === h.id && l.date === ds)) { s++; dc.setDate(dc.getDate() - 1); } else break;
+                    }
+                    return s;
+                  }));
+                  return bestStreak > 0 ? (
+                    <span className="flex items-center gap-1 bg-orange-50 border border-orange-200 text-orange-600 text-xs font-bold px-2.5 py-1 rounded-full">
+                      🔥 {bestStreak} días de racha
+                    </span>
+                  ) : null;
+                })()}
+                <button onClick={() => currentUser?.id && loadUserData(currentUser.id)} title="Recargar">
+                  <RefreshCw size={15} className={`text-gray-400 ${dataLoading ? 'animate-spin text-purple-500' : ''}`} />
                 </button>
               </div>
+            </div>
+
+            {/* Balance principal — Patrimonio Neto como hero */}
+            <div className="glass rounded-[2rem] p-5">
               {dataLoading ? (
                 /* Skeleton mientras carga */
                 <div className="animate-pulse">
+                  <div className="h-4 bg-gray-200 rounded w-32 mb-2" />
                   <div className="h-10 bg-gray-200 rounded-xl w-48 mt-2" />
                   <div className="mt-4 pt-3 border-t border-gray-100 flex items-start justify-between gap-1">
                     <div className="h-8 bg-gray-200 rounded-lg w-20" />
@@ -3046,14 +3424,29 @@ export default function App() {
                 </div>
               ) : (
                 <>
+                  <p className="text-[10px] text-[#86868B] font-bold uppercase tracking-wide">Patrimonio Neto</p>
                   <div className="flex items-baseline gap-1 mt-1">
                     <span className="text-xl font-light text-[#86868B]">$</span>
-                    <h2 className="text-4xl font-semibold tracking-tighter">{fmtARS(liquidBalance)}</h2>
-                    {totalsByCurrency.some(([c]) => c !== 'ARS') && (
-                      <button onClick={() => setShowByCurrency(v => !v)} className="ml-1 text-[10px] font-bold text-purple-500 bg-purple-50 px-2 py-0.5 rounded-full">
-                        {showByCurrency ? 'ARS' : 'monedas'}
-                      </button>
-                    )}
+                    <h2 className="text-4xl font-semibold tracking-tighter">{fmtARS(patrimonioNeto)}</h2>
+                  </div>
+                  {/* Neto para gastar + gastado hoy */}
+                  <div className="mt-2 space-y-1">
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-xs text-gray-500">↑ Neto para gastar:</span>
+                      <span className="text-xs font-bold text-gray-700">$ {fmtARS(liquidBalance)}</span>
+                      {totalsByCurrency.some(([c]) => c !== 'ARS') && (
+                        <button onClick={() => setShowByCurrency(v => !v)} className="text-[10px] font-bold text-purple-500 bg-purple-50 px-2 py-0.5 rounded-full">
+                          {showByCurrency ? 'ARS' : 'monedas'}
+                        </button>
+                      )}
+                    </div>
+                    {(() => {
+                      const todayStr = new Date().toISOString().split('T')[0];
+                      const spentToday = transactions.filter(t => t.type === 'gasto' && t.date === todayStr).reduce((s, t) => s + t.amount, 0);
+                      return spentToday > 0 ? (
+                        <p className="text-xs text-red-400 font-medium">Gastaste $ {fmtARS(spentToday)} hoy</p>
+                      ) : null;
+                    })()}
                   </div>
                   {showByCurrency && (
                     <div className="mt-2 space-y-0.5">
@@ -3075,8 +3468,10 @@ export default function App() {
                       <p className="text-xs font-bold text-red-500 mt-0.5 whitespace-nowrap">$ {fmtARS(monthlyStats.expense)}</p>
                     </div>
                     <div className="text-right">
-                      <p className="text-[10px] text-gray-400 font-bold uppercase">Impacto</p>
-                      <p className="text-sm font-bold text-gray-700 mt-0.5">{percentageBurn.toFixed(0)}%</p>
+                      <p className="text-[10px] text-gray-400 font-bold uppercase">Balance</p>
+                      <p className={`text-sm font-bold mt-0.5 ${monthlyStats.income - monthlyStats.expense >= 0 ? 'text-blue-600' : 'text-red-500'}`}>
+                        {monthlyStats.income - monthlyStats.expense >= 0 ? '+' : ''}$ {fmtARS(monthlyStats.income - monthlyStats.expense)}
+                      </p>
                     </div>
                   </div>
                 </>
@@ -3387,6 +3782,26 @@ export default function App() {
               );
             })()}
 
+            {/* Widget Inversiones */}
+            <button onClick={() => setShowInvestments(true)} className="glass rounded-2xl px-4 py-3 w-full flex items-center gap-3 active:scale-[0.98] transition-transform">
+              <span className="text-2xl">📊</span>
+              <div className="flex-1 text-left">
+                <p className="font-bold text-sm">Inversiones</p>
+                {investments.length > 0 ? (
+                  <p className="text-xs text-gray-400">
+                    {investments.length} activo{investments.length !== 1 ? 's' : ''} · $ {fmtARS(investments.reduce((s, inv) => {
+                      const price = inv.current_price || inv.purchase_price;
+                      const val = price * inv.quantity;
+                      return s + (inv.currency === 'USD' ? val * blueRate : val);
+                    }, 0))}
+                  </p>
+                ) : (
+                  <p className="text-xs text-gray-400">Registrá tus cripto, acciones y activos</p>
+                )}
+              </div>
+              <span className="text-gray-300 text-sm">›</span>
+            </button>
+
             {/* Shortcut lista de compras */}
             {shoppingItems.filter(i => !i.checked).length > 0 && (
               <button onClick={() => changeTab('shopping')} className="glass rounded-2xl px-4 py-3 w-full flex items-center gap-3 active:scale-[0.98] transition-transform">
@@ -3429,7 +3844,7 @@ export default function App() {
         )}
 
         {/* ── CUENTAS ────────────────────────────────── */}
-        {activeTab === 'accounts' && (
+        {!showInvestments && activeTab === 'accounts' && (
           <div className="space-y-5 animate-in fade-in">
             <div className="flex justify-between items-center"><h2 className="text-2xl font-bold">Mis Cuentas</h2><button onClick={() => openAccModal()} className="bg-black text-white px-3 py-1.5 rounded-full text-xs font-bold flex items-center gap-1"><Plus size={14} /> Agregar</button></div>
             {(['gastos', 'efectivo', 'credito', 'ahorro'] as AccountType[]).map(type => {
@@ -3479,7 +3894,7 @@ export default function App() {
         )}
 
         {/* ── ACTIVIDAD ──────────────────────────────── */}
-        {activeTab === 'activity' && (() => {
+        {!showInvestments && activeTab === 'activity' && (() => {
           const activeFilterCount = [activityFilter.type, activityFilter.category, activityFilter.account, activityFilter.method, activityFilter.month].filter(Boolean).length;
           const clearAllFilters = () => setActivityFilter({ search: '', type: '', category: '', account: '', method: '', month: '' });
           const chipBase = 'flex-shrink-0 text-xs font-bold px-3 py-2 rounded-full border transition-colors cursor-pointer appearance-none';
