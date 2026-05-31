@@ -235,7 +235,7 @@ const BANK_CONFIG: Record<string, { color: string, bg: string, label: string }> 
 
 const CATEGORIES: Record<TransactionType, string[]> = {
   gasto: ['Comida', 'Alquiler', 'Servicios', 'Ocio', 'Transporte', 'Suscripciones', 'Salud', 'Varios', 'Pago de deuda'],
-  ingreso: ['Sueldo', 'Ventas', 'Intereses', 'Regalo'],
+  ingreso: ['Sueldo', 'Ventas', 'Intereses', 'Regalo', 'Cobro de deuda', 'Préstamo recibido'],
   transferencia: ['Ahorro', 'Pago Tarjeta', 'Movimiento']
 };
 
@@ -246,7 +246,7 @@ const CATEGORY_EMOJI: Record<string, string> = {
   'Transporte': '🚗', 'Suscripciones': '📱', 'Salud': '🏥', 'Varios': '📦',
   'Sueldo': '💼', 'Ventas': '💰', 'Intereses': '📈', 'Regalo': '🎁',
   'Ahorro': '🔒', 'Movimiento': '↔️', 'Pago Tarjeta': '💳', 'Ajuste': '⚙️',
-  'Pago de deuda': '🤝',
+  'Pago de deuda': '🤝', 'Cobro de deuda': '💵', 'Préstamo recibido': '📥', 'Préstamo otorgado': '📤',
 };
 const getCategoryEmoji = (category: string, overrides?: Record<string, string>): string =>
   overrides?.[category] || CATEGORY_EMOJI[category] || '📋';
@@ -3429,35 +3429,40 @@ export default function App() {
                     <span className="text-xl font-light text-[#86868B]">$</span>
                     <h2 className="text-4xl font-semibold tracking-tighter">{fmtARS(patrimonioNeto)}</h2>
                   </div>
-                  {/* Neto para gastar + gastado hoy */}
-                  <div className="mt-2 space-y-1">
-                    <div className="flex items-center gap-1.5">
-                      <span className="text-xs text-gray-500">↑ Neto para gastar:</span>
-                      <span className="text-xs font-bold text-gray-700">$ {fmtARS(liquidBalance)}</span>
+                  {/* Neto para gastar — métrica secundaria prominente */}
+                  <div className="mt-3 pt-3 border-t border-gray-100">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <p className="text-[10px] text-gray-400 font-bold uppercase tracking-wide">Neto para Gastar</p>
+                        <div className="flex items-baseline gap-1 mt-0.5">
+                          <span className="text-sm font-light text-gray-500">$</span>
+                          <span className="text-2xl font-semibold text-gray-800">{fmtARS(liquidBalance)}</span>
+                        </div>
+                        {(() => {
+                          const todayStr = new Date().toISOString().split('T')[0];
+                          const spentToday = transactions.filter(t => t.type === 'gasto' && t.date === todayStr).reduce((s, t) => s + t.amount, 0);
+                          return spentToday > 0 ? (
+                            <p className="text-[10px] text-red-400 font-medium mt-0.5">- $ {fmtARS(spentToday)} gastado hoy</p>
+                          ) : null;
+                        })()}
+                      </div>
                       {totalsByCurrency.some(([c]) => c !== 'ARS') && (
-                        <button onClick={() => setShowByCurrency(v => !v)} className="text-[10px] font-bold text-purple-500 bg-purple-50 px-2 py-0.5 rounded-full">
+                        <button onClick={() => setShowByCurrency(v => !v)} className="text-[10px] font-bold text-purple-500 bg-purple-50 px-2 py-1 rounded-full">
                           {showByCurrency ? 'ARS' : 'monedas'}
                         </button>
                       )}
                     </div>
-                    {(() => {
-                      const todayStr = new Date().toISOString().split('T')[0];
-                      const spentToday = transactions.filter(t => t.type === 'gasto' && t.date === todayStr).reduce((s, t) => s + t.amount, 0);
-                      return spentToday > 0 ? (
-                        <p className="text-xs text-red-400 font-medium">Gastaste $ {fmtARS(spentToday)} hoy</p>
-                      ) : null;
-                    })()}
+                    {showByCurrency && (
+                      <div className="mt-2 space-y-0.5">
+                        {totalsByCurrency.map(([cur, val]) => (
+                          <div key={cur} className="flex items-center justify-between text-xs">
+                            <span className="text-gray-400">{(CURRENCY_FLAGS as any)[cur] || '🌐'} {cur}</span>
+                            <span className="font-bold text-gray-700">{(CURRENCY_SYMBOLS as any)[cur] || cur} {fmtARS(val)}</span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
                   </div>
-                  {showByCurrency && (
-                    <div className="mt-2 space-y-0.5">
-                      {totalsByCurrency.map(([cur, val]) => (
-                        <div key={cur} className="flex items-center justify-between text-xs">
-                          <span className="text-gray-400">{CURRENCY_FLAGS[cur]} {cur}</span>
-                          <span className="font-bold text-gray-700">{CURRENCY_SYMBOLS[cur] || cur} {fmtARS(val)}</span>
-                        </div>
-                      ))}
-                    </div>
-                  )}
                   <div className="mt-4 pt-3 border-t border-gray-100 flex items-start justify-between gap-1">
                     <div>
                       <p className="text-[10px] text-green-500 font-bold uppercase">Ingresos</p>
