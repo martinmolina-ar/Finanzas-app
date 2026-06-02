@@ -452,7 +452,7 @@ const BudgetModal = ({ budgets, onSave, onClose, extraCategories = [] }: { budge
     const n = [...local]; n[i] = { ...n[i], [field]: value }; setLocal(n);
   };
   return (
-    <div className="fixed inset-0 z-[70] flex items-end sm:items-center justify-center sm:p-4 bg-black/60 backdrop-blur-sm" onClick={onClose}>
+    <div className="fixed inset-0 z-[70] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm" onClick={onClose}>
       <div className="glass rounded-t-[2rem] sm:rounded-[2rem] p-6 w-full sm:max-w-sm max-h-[85vh] overflow-y-auto animate-fade-slide" onClick={e => e.stopPropagation()}>
         <div className="flex justify-between items-center mb-5">
           <div><h3 className="text-xl font-bold">Presupuestos</h3><p className="text-xs text-gray-400 mt-0.5">Límite mensual por categoría</p></div>
@@ -693,8 +693,8 @@ const InvestmentsView = ({
 
       {/* Add/Edit Form Modal */}
       {showForm && (
-        <div className="fixed inset-0 z-[70] flex items-end justify-center bg-black/50 backdrop-blur-md" onClick={() => setShowForm(false)}>
-          <div className="bg-white rounded-t-[2rem] w-full max-w-sm max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+        <div className="fixed inset-0 z-[70] flex items-center justify-center p-4 bg-black/50 backdrop-blur-md" onClick={() => setShowForm(false)}>
+          <div className="bg-white rounded-[2rem] w-full max-w-sm max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
             <form onSubmit={handleSubmit} className="p-6 space-y-4">
               <div className="flex items-center justify-between mb-2">
                 <h3 className="text-lg font-bold">{editing ? 'Editar' : 'Nueva'} inversión</h3>
@@ -1339,8 +1339,8 @@ const DebtView = ({ debts, accounts, onAdd, onEdit, onDelete, onPay, onBack, dol
 
       {/* Modal alta/edición */}
       {showForm && (
-        <div className="fixed inset-0 z-[70] flex items-end sm:items-center justify-center sm:p-4 bg-black/50 backdrop-blur-sm" onClick={() => setShowForm(false)}>
-          <div className="glass rounded-t-3xl sm:rounded-3xl p-6 w-full sm:max-w-sm space-y-4" onClick={e => e.stopPropagation()}>
+        <div className="fixed inset-0 z-[70] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm" onClick={() => setShowForm(false)}>
+          <div className="glass rounded-3xl p-6 w-full max-w-sm space-y-4" onClick={e => e.stopPropagation()}>
             <div className="flex items-center justify-between"><h3 className="text-xl font-bold">{editingDebt ? 'Editar deuda' : 'Nueva deuda'}</h3><button onClick={() => setShowForm(false)} className="p-2 bg-gray-100 rounded-full"><X size={18} /></button></div>
             <div className="flex bg-gray-100 p-1 rounded-xl">
               <button type="button" onClick={() => setForm({ ...form, type: 'me_deben' })} className={`flex-1 py-2 text-xs font-bold rounded-lg transition-all ${form.type === 'me_deben' ? 'bg-white shadow text-green-700' : 'text-gray-500'}`}>📥 Me deben</button>
@@ -1384,8 +1384,8 @@ const DebtView = ({ debts, accounts, onAdd, onEdit, onDelete, onPay, onBack, dol
 
       {/* Modal pago/cobro */}
       {payingDebt && (
-        <div className="fixed inset-0 z-[70] flex items-end sm:items-center justify-center sm:p-4 bg-black/50 backdrop-blur-sm" onClick={() => setPayingDebt(null)}>
-          <div className="glass rounded-t-3xl sm:rounded-3xl p-6 w-full sm:max-w-sm space-y-4" onClick={e => e.stopPropagation()}>
+        <div className="fixed inset-0 z-[70] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm" onClick={() => setPayingDebt(null)}>
+          <div className="glass rounded-3xl p-6 w-full max-w-sm space-y-4" onClick={e => e.stopPropagation()}>
             <div className="flex items-center justify-between">
               <h3 className="text-xl font-bold">{payingDebt.type === 'me_deben' ? '💰 Registrar cobro' : '💸 Registrar pago'}</h3>
               <button onClick={() => setPayingDebt(null)} className="p-2 bg-gray-100 rounded-full"><X size={18} /></button>
@@ -1739,8 +1739,8 @@ const HabitsView = ({
       )}
 
       {showForm && (
-        <div className="fixed inset-0 z-[70] flex items-end justify-center bg-black/60 backdrop-blur-sm" onClick={() => setShowForm(false)}>
-          <div className="bg-white rounded-t-[2rem] w-full max-w-lg flex flex-col" style={{maxHeight:'88vh'}} onClick={e => e.stopPropagation()}>
+        <div className="fixed inset-0 z-[70] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm" onClick={() => setShowForm(false)}>
+          <div className="bg-white rounded-[2rem] w-full max-w-lg flex flex-col" style={{maxHeight:'88vh'}} onClick={e => e.stopPropagation()}>
 
             {/* Header fijo — siempre visible */}
             <div className="px-5 pt-5 pb-3 shrink-0">
@@ -4064,7 +4064,7 @@ export default function App() {
 
       {/* ── MODAL TRANSACCIÓN ────────────────────────── */}
       {showTransactionModal && (
-        <div className="fixed inset-0 z-[70] flex items-end sm:items-center justify-center sm:p-4 bg-black/50 backdrop-blur-md" onClick={() => { setShowTransactionModal(false); setConfirmDeleteId(null); }}>
+        <div className="fixed inset-0 z-[70] flex items-center justify-center p-4 bg-black/50 backdrop-blur-md" onClick={() => { setShowTransactionModal(false); setConfirmDeleteId(null); }}>
           <div className="bg-white rounded-t-[2rem] sm:rounded-[2rem] w-full sm:max-w-sm max-h-[92vh] overflow-y-auto animate-fade-slide shadow-2xl" onClick={e => e.stopPropagation()}>
             {/* Colored header stripe based on type */}
             {(() => {
@@ -4326,7 +4326,7 @@ export default function App() {
 
       {/* ── MODAL CUENTA ─────────────────────────────── */}
       {showAccountModal && (
-        <div className="fixed inset-0 z-[70] flex items-end sm:items-center justify-center sm:p-4 bg-black/60 backdrop-blur-sm" onClick={() => setShowAccountModal(false)}>
+        <div className="fixed inset-0 z-[70] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm" onClick={() => setShowAccountModal(false)}>
           <div className="glass rounded-t-[2rem] sm:rounded-[2rem] p-6 w-full sm:max-w-sm max-h-[92vh] overflow-y-auto animate-fade-slide" onClick={e => e.stopPropagation()}>
             <div className="flex justify-between items-center mb-5"><h3 className="text-xl font-bold">{accForm.id ? 'Editar' : 'Nueva'} Cuenta</h3><button onClick={() => setShowAccountModal(false)} className="p-2 bg-gray-100 rounded-full"><X size={18} /></button></div>
             <form onSubmit={handleSaveAccount} className="space-y-4">
@@ -4391,8 +4391,8 @@ export default function App() {
 
       {/* ── MODAL ACCIÓN CUENTA ───────────────────────── */}
       {selectedAccountForAction && (
-        <div className="fixed inset-0 z-[60] flex items-end sm:items-center justify-center sm:p-4 bg-black/50 backdrop-blur-sm" onClick={() => { setSelectedAccountForAction(null); setConfirmDeleteAccountId(null); }}>
-          <div className="glass rounded-t-3xl sm:rounded-3xl p-6 w-full sm:max-w-sm animate-fade-slide" onClick={e => e.stopPropagation()}>
+        <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm" onClick={() => { setSelectedAccountForAction(null); setConfirmDeleteAccountId(null); }}>
+          <div className="glass rounded-3xl p-6 w-full max-w-sm animate-fade-slide" onClick={e => e.stopPropagation()}>
             <div className="flex items-center justify-between mb-5"><h3 className="text-xl font-bold">{selectedAccountForAction.name}</h3><button onClick={() => { setSelectedAccountForAction(null); setConfirmDeleteAccountId(null); }} className="p-2 bg-gray-100 rounded-full"><X size={18} /></button></div>
             {selectedAccountForAction.type === 'ahorro' && (
               <div className="flex items-center gap-2 mb-3 bg-amber-50 rounded-2xl px-3 py-2">
@@ -4503,8 +4503,8 @@ export default function App() {
 
       {/* ── MODAL PREVIEW GALICIA ────────────────────── */}
       {importPreview && (
-        <div className="fixed inset-0 z-[70] flex items-end sm:items-center justify-center sm:p-4 bg-black/60 backdrop-blur-sm">
-          <div className="glass rounded-t-3xl sm:rounded-3xl w-full sm:max-w-md max-h-[85vh] flex flex-col" onClick={e => e.stopPropagation()}>
+        <div className="fixed inset-0 z-[70] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+          <div className="glass rounded-3xl w-full max-w-md max-h-[85vh] flex flex-col" onClick={e => e.stopPropagation()}>
             <div className="p-5 border-b border-gray-100">
               <div className="flex items-center justify-between mb-1">
                 <h3 className="text-lg font-bold">Importar movimientos</h3>
@@ -4573,8 +4573,8 @@ export default function App() {
 
       {/* ── MODAL PREVIEW MP ─────────────────────────── */}
       {mpPreview && (
-        <div className="fixed inset-0 z-[70] flex items-end sm:items-center justify-center sm:p-4 bg-black/60 backdrop-blur-sm">
-          <div className="glass rounded-t-3xl sm:rounded-3xl w-full sm:max-w-md max-h-[85vh] flex flex-col" onClick={e => e.stopPropagation()}>
+        <div className="fixed inset-0 z-[70] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+          <div className="glass rounded-3xl w-full max-w-md max-h-[85vh] flex flex-col" onClick={e => e.stopPropagation()}>
             <div className="p-5 border-b border-gray-100">
               <div className="flex items-center justify-between mb-1">
                 <h3 className="text-lg font-bold">Sincronizar Mercado Pago</h3>
