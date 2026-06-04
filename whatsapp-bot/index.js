@@ -366,28 +366,36 @@ app.get('/mp-sync', async (req, res) => {
     const endDate = new Date().toISOString();
     const startDate = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000).toISOString();
 
+    // mpUserId viene de la columna mp_user_id guardada en el OAuth callback
+    const myMpId = mpUserId;
+    console.log('My MP ID:', myMpId);
+
+    // Intentar los dos endpoints posibles de balance según tipo de cuenta MP
+    const balanceUrl = myMpId
+      ? `https://api.mercadopago.com/v1/users/${myMpId}/mercadopago_account/balance`
+      : 'https://api.mercadopago.com/v1/account/balance';
+
     const [paymentsRes, balanceRes] = await Promise.all([
       fetch(`https://api.mercadopago.com/v1/payments/search?sort=date_created&criteria=desc&range=date_created&begin_date=${startDate}&end_date=${endDate}&limit=100`, {
         headers: { 'Authorization': `Bearer ${token}` }
       }),
-      fetch('https://api.mercadopago.com/v1/account/balance', {
+      fetch(balanceUrl, {
         headers: { 'Authorization': `Bearer ${token}` }
       })
     ]);
 
     const [paymentsData, balanceData] = await Promise.all([paymentsRes.json(), balanceRes.json()]);
-
-    // mpUserId viene de la columna mp_user_id guardada en el OAuth callback
-    const myMpId = mpUserId;
-    console.log('My MP ID:', myMpId);
+    console.log('Balance data:', JSON.stringify(balanceData).slice(0, 200));
     console.log('Payments count:', paymentsData.results?.length);
 
     const balance =
       balanceData.available_balance ??
-      balanceData.total_amount ??
       balanceData.own_money ??
+      balanceData.total_amount ??
+      balanceData.total_paid_amount ??
       (Array.isArray(balanceData.accounts) ? balanceData.accounts.find(a => a.currency_id === 'ARS')?.available_balance : null) ??
-      0;
+      (balanceData.money_in_mercado_pago) ??
+      null; // null = no pudimos obtener el saldo (NO usar 0 para no pisar el saldo real)
 
     const payments = (paymentsData.results || [])
       .filter(p => ['approved', 'settled'].includes(p.status) && Math.abs(p.transaction_amount) > 0)

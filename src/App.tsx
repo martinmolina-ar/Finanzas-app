@@ -1997,6 +1997,7 @@ export default function App() {
   const [mpSyncing, setMpSyncing] = useState(false);
   const [mpPreview, setMpPreview] = useState<any[] | null>(null);
   const [mpBalance, setMpBalance] = useState<number | null>(null);
+  const [mpSyncAccountName, setMpSyncAccountName] = useState<string>('');
   const [mpSelected, setMpSelected] = useState<Set<string>>(new Set());
   const [mpCardMapping, setMpCardMapping] = useState<Record<string, string>>({}); // cardKey → accountName
   // ── Galicia import ──
@@ -2051,9 +2052,10 @@ export default function App() {
         return { ...p, account };
       });
       setMpPreview(preview);
+      setMpSyncAccountName(accountName);
       // Auto-destildar pagos con tarjeta ajena (isOwnCard === false)
       setMpSelected(new Set(preview.filter((p: any) => p.isOwnCard !== false).map((p: any) => p.id)));
-      setMpBalance(data.balance);
+      setMpBalance(data.balance ?? null);
       // Detectar tarjetas sin cuenta asignada
       const unmatched: Record<string, string> = {};
       preview.forEach((p: any) => {
@@ -2098,12 +2100,13 @@ export default function App() {
       return [...newTxObjs.filter(t => !existingIds.has(t.id)), ...prev];
     });
     // Ajustar saldo real de la cuenta Mercado Pago usando el balance de la API
-    if (mpBalance !== null) {
-      // Buscar la cuenta de MP específicamente (no la primera transacción)
-      const mpAcc = accountsList.find(a =>
-        a.name.toLowerCase().includes('mercado pago') ||
-        a.name.toLowerCase().includes('mercadopago')
-      );
+    if (mpBalance !== null && mpBalance > 0) {
+      // Usar el nombre exacto de la cuenta con la que se hizo el sync
+      const mpAcc = accountsList.find(a => a.name === mpSyncAccountName)
+        || accountsList.find(a =>
+          a.name.toLowerCase().includes('mercado pago') ||
+          a.name.toLowerCase().includes('mercadopago')
+        );
       if (mpAcc) {
         // Merge existing txs (from state snapshot at call time) with newly imported ones
         const existingIds = new Set(transactions.map(t => t.id));
