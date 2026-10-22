@@ -88,3 +88,4 @@ Saca capturas en 390px y 1440px, en claro y oscuro, y reporta scroll horizontal,
 | `references/anti-genericos.md` | Lo que delata un diseño "hecho por IA" y cómo evitarlo |
 | `references/patrones.md` | Tratamientos modernos por sección: promo, marca, app, backoffice |
 | `references/checklist.md` | Control de calidad antes de entregar |
+| `PROMPT.md` | Versión autocontenida para pegar en cualquier chat o herramienta sin el skill instalado |
